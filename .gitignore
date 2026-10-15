@@ -56,3 +56,12 @@ android/key.properties
 # Local config
 android/local.properties
 
+
+# Build artifacts
+*.apk
+*.aab
+*.ipa
+*.exe
+*.zip
+melodyflow-v*-*.apk
+android/build/

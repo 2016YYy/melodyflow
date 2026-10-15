@@ -46,3 +46,13 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Signing keys (NEVER commit keystores)
+*.jks
+*.keystore
+android/app/melodyflow-release.jks
+android/key.properties
+
+# Local config
+android/local.properties
+

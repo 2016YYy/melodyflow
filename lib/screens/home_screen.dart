@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../providers/music_provider.dart';
+import '../theme/app_theme.dart';
 import '../widgets/album_art_widget.dart';
 import '../widgets/integrated_nav_bar.dart';
 import '../widgets/mini_player.dart';
@@ -42,9 +43,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<MusicProvider>();
-
-    // 切换菜单时若已进入音源/设置，点击音乐回到主页
     return Scaffold(
       body: IndexedStack(
         index: _navIndex,
@@ -65,7 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
           }),
           IntegratedNavBar(
             currentIndex: _navIndex,
-            palette: provider.palette,
             items: _navItems,
             onTap: (i) => setState(() => _navIndex = i),
           ),
@@ -285,7 +282,7 @@ class _AlbumCard extends StatelessWidget {
         children: [
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               child: AlbumArtWidget(
                 song: songs.first,
                 size: double.infinity,
@@ -482,7 +479,7 @@ class _FavoritesTile extends StatelessWidget {
         width: 52,
         height: 52,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           gradient: const LinearGradient(
             colors: [Color(0xFFFF4E7A), Color(0xFFEC4899)],
           ),
@@ -510,7 +507,7 @@ class _PlaylistTile extends StatelessWidget {
     final palette = context.read<MusicProvider>().palette;
     return ListTile(
       leading: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         child: playlist.songs.isNotEmpty
             ? AlbumArtWidget(
                 song: playlist.songs.first,

@@ -62,6 +62,8 @@ class AlbumArtWidget extends StatelessWidget {
   }
 
   Widget _placeholder(ThemePalette palette) {
+    // size 可能为 double.infinity（沉浸式背景 / 头图场景），此处回退为固定图标尺寸
+    final iconSize = size.isFinite ? size * 0.45 : 64.0;
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -73,8 +75,8 @@ class AlbumArtWidget extends StatelessWidget {
       child: Center(
         child: Icon(
           placeholderIcon,
-          color: Colors.white.withValues(alpha:0.85),
-          size: size * 0.45,
+          color: Colors.white.withValues(alpha: 0.85),
+          size: iconSize,
         ),
       ),
     );
@@ -99,6 +101,7 @@ class GradientCoverPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.watch<MusicProvider>().palette;
+    final iconSize = size.isFinite ? size * 0.42 : 60.0;
     return SizedBox(
       width: size,
       height: size,
@@ -116,7 +119,7 @@ class GradientCoverPlaceholder extends StatelessWidget {
             child: Icon(
               icon,
               color: Colors.white.withValues(alpha:0.85),
-              size: size * 0.42,
+              size: iconSize,
             ),
           ),
         ),

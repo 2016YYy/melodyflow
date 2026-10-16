@@ -1,27 +1,22 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// 分组标题（浅色底纹）
+/// 分组标题
 class SectionHeader extends StatelessWidget {
   final String title;
   const SectionHeader(this.title, {super.key});
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      width: double.infinity,
-      color: isDark
-          ? Colors.white.withValues(alpha: 0.03)
-          : Colors.black.withValues(alpha: 0.03),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
       child: Text(
         title,
         style: TextStyle(
           fontSize: 13,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-          color: Theme.of(context).textTheme.bodySmall?.color,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+          color: Theme.of(context).colorScheme.primary,
         ),
       ),
     );
@@ -37,13 +32,13 @@ class InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(value, style: Theme.of(context).textTheme.bodyMedium),
         ],
@@ -60,14 +55,15 @@ class IconBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      width: 42,
-      height: 42,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(11),
-        color: palette.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        color: palette.primary.withValues(alpha: 0.14),
       ),
-      child: Icon(icon, color: palette.primary, size: 22),
+      child: Icon(icon, color: scheme.primary, size: 22),
     );
   }
 }
@@ -94,12 +90,14 @@ class ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: IconBox(icon: icon, palette: palette),
       title: Text(title,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle),
-      trailing: trailing,
+      trailing: trailing ??
+          Icon(Icons.chevron_right_rounded,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
       onTap: onTap,
     );
   }
@@ -127,16 +125,12 @@ class SwitchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: IconBox(icon: icon, palette: palette),
       title: Text(title,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-        activeThumbColor: palette.primary,
-      ),
+      trailing: Switch(value: value, onChanged: onChanged),
     );
   }
 }

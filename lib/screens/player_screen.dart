@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
@@ -8,7 +10,7 @@ import '../widgets/album_art_widget.dart';
 import '../widgets/gradient_progress_bar.dart';
 import '../widgets/lyrics_view.dart';
 
-/// 播放器全屏界面 - 支持多皮肤、封面长按放大、渐变进度条
+/// 播放器全屏界面 - 沉浸式模糊封面背景、多皮肤、动态主题、封面长按放大
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
@@ -16,8 +18,7 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen>
-    with SingleTickerProviderStateMixin {
+class _PlayerScreenState extends State<PlayerScreen> {
   bool _showLyrics = false;
   double _dragValue = -1;
   bool _dragging = false;
@@ -35,6 +36,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final song = provider.currentSong;
     final palette = provider.palette;
     final skin = provider.playerSkin;
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (song == null) {
       return Scaffold(
@@ -43,67 +46,114 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
     }
 
-    // 根据皮肤决定背景
-    final bgGradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: skin.name == 'minimal'
-          ? [const Color(0xFF0A0A14), const Color(0xFF0A0A14)]
-          : [palette.coverPlaceholder[0].withValues(alpha:0.35), const Color(0xFF12121F)],
-    );
-
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(gradient: bgGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(context, provider, palette),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _showLyrics = !_showLyrics),
-                  onLongPress: () => _showArtworkViewer(context, song),
-                  child: _showLyrics
-                      ? LyricsView(
-                          lyrics: provider.currentLyrics,
-                          currentPosition: provider.position,
-                          onSeek: (pos) => provider.seek(pos),
-                        )
-                      : _buildCover(context, song, skin, palette),
+      body: Stack(
+        children: [
+          _buildBackground(song, isDark),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(context, provider, skin, scheme),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showLyrics = !_showLyrics),
+                    onLongPress: () => _showArtworkViewer(context, song),
+                    child: _showLyrics
+                        ? LyricsView(
+                            lyrics: provider.currentLyrics,
+                            currentPosition: provider.position,
+                            onSeek: (pos) => provider.seek(pos),
+                          )
+                        : _buildCover(song, skin),
+                  ),
                 ),
-              ),
-              _buildSongInfo(song, palette),
-              _buildProgress(provider, palette),
-              _buildControls(provider, palette),
-              const SizedBox(height: 24),
-            ],
+                _buildSongInfo(context, song, scheme),
+                const SizedBox(height: 6),
+                _buildProgress(provider, palette, scheme),
+                const SizedBox(height: 8),
+                _buildControls(context, provider, palette, scheme),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildTopBar(BuildContext context, MusicProvider provider,
-      ThemePalette palette) {
+  /// 沉浸式背景：模糊封面 + 渐隐到主题底色
+  Widget _buildBackground(Song song, bool isDark) {
+    final base = isDark ? const Color(0xFF0B0B0F) : const Color(0xFFF4F4FA);
+    return Positioned.fill(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
+            child: Transform.scale(
+              scale: 1.4,
+              child: AlbumArtWidget(
+                song: song,
+                size: double.infinity,
+                borderRadius: 0,
+                placeholderIcon: Icons.music_note_rounded,
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  base.withValues(alpha: isDark ? 0.30 : 0.50),
+                  base.withValues(alpha: 0.86),
+                  base,
+                ],
+                stops: const [0.0, 0.5, 0.9],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(
+    BuildContext context,
+    MusicProvider provider,
+    PlayerSkin skin,
+    ColorScheme scheme,
+  ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+            color: scheme.onSurface,
             onPressed: () => Navigator.pop(context),
           ),
           Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('正在播放',
-                  style: TextStyle(fontSize: 13, color: Colors.white60)),
               Text(
-                provider.playerSkin.label,
+                '正在播放',
                 style: TextStyle(
-                    fontSize: 11,
-                    color: palette.primary,
-                    fontWeight: FontWeight.w600),
+                  fontSize: 12.5,
+                  color: scheme.onSurfaceVariant,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                skin.label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -111,11 +161,13 @@ class _PlayerScreenState extends State<PlayerScreen>
             children: [
               IconButton(
                 icon: const Icon(Icons.palette_rounded),
+                color: scheme.onSurface,
                 tooltip: '切换皮肤',
                 onPressed: () => _showSkinPicker(context, provider),
               ),
               IconButton(
                 icon: const Icon(Icons.more_horiz_rounded),
+                color: scheme.onSurface,
                 onPressed: () {},
               ),
             ],
@@ -125,36 +177,64 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildCover(BuildContext context, Song song, PlayerSkin skin,
-      ThemePalette palette) {
-    // 黑胶皮肤：旋转唱片
+  Widget _buildCover(Song song, PlayerSkin skin) {
     if (skin.name == 'vinyl') {
-      return _VinylCover(song: song, palette: palette);
+      return _VinylCover(song: song);
     }
 
-    double coverSize = skin.name == 'minimal' ? 260 : 300;
-    double radius = skin.name == 'minimal' ? 24 : 20;
+    final double coverSize = skin.name == 'minimal' ? 236 : 296;
+    final double radius = AppRadius.xl;
 
     return Center(
-      child: SizedBox(
+      child: Container(
         width: coverSize,
         height: coverSize,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 40,
+              spreadRadius: 2,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(radius),
-          child: AlbumArtWidget(
-            song: song,
-            size: double.infinity,
-            borderRadius: 0,
-            placeholderIcon: Icons.music_note_rounded,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              AlbumArtWidget(
+                song: song,
+                size: double.infinity,
+                borderRadius: 0,
+                placeholderIcon: Icons.music_note_rounded,
+              ),
+              // 顶部高光，模拟唱片玻璃质感
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.16),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.45],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSongInfo(Song song, ThemePalette palette) {
+  Widget _buildSongInfo(BuildContext context, Song song, ColorScheme scheme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(28, 18, 20, 4),
       child: Row(
         children: [
           Expanded(
@@ -163,18 +243,22 @@ class _PlayerScreenState extends State<PlayerScreen>
               children: [
                 Text(
                   song.title,
-                  style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white),
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                    color: scheme.onSurface,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Text(
                   song.artist,
-                  style:
-                      const TextStyle(color: Colors.white60, fontSize: 16),
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 15,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -187,19 +271,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildProgress(MusicProvider provider, ThemePalette palette) {
+  Widget _buildProgress(
+    MusicProvider provider,
+    ThemePalette palette,
+    ColorScheme scheme,
+  ) {
     final duration = provider.duration.inMilliseconds;
     final position = provider.position.inMilliseconds;
     final value = duration > 0 ? position / duration : 0.0;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         children: [
           GradientProgressBar(
             value: _dragging ? _dragValue : value,
             gradientColors: palette.gradient,
-            height: 6,
+            height: 5,
             onChanged: (v) {
               setState(() {
                 _dragging = true;
@@ -214,16 +302,18 @@ class _PlayerScreenState extends State<PlayerScreen>
               });
             },
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(_fmt(provider.position),
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: TextStyle(
+                        color: scheme.onSurfaceVariant, fontSize: 12)),
                 Text(_fmt(provider.duration),
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: TextStyle(
+                        color: scheme.onSurfaceVariant, fontSize: 12)),
               ],
             ),
           ),
@@ -232,60 +322,52 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildControls(MusicProvider provider, ThemePalette palette) {
+  Widget _buildControls(
+    BuildContext context,
+    MusicProvider provider,
+    ThemePalette palette,
+    ColorScheme scheme,
+  ) {
+    final active = scheme.primary;
+    final inactive = scheme.onSurfaceVariant;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           IconButton(
+            iconSize: 26,
             icon: Icon(
-              provider.shuffle ? Icons.shuffle_on_rounded : Icons.shuffle_rounded,
-              color: provider.shuffle ? palette.primary : Colors.white60,
+              provider.shuffle
+                  ? Icons.shuffle_on_rounded
+                  : Icons.shuffle_rounded,
+              color: provider.shuffle ? active : inactive,
             ),
             onPressed: () => provider.toggleShuffle(),
           ),
           IconButton(
             iconSize: 42,
-            icon: const Icon(Icons.skip_previous_rounded, color: Colors.white),
+            icon: Icon(Icons.skip_previous_rounded, color: scheme.onSurface),
             onPressed: () => provider.previous(),
           ),
-          GestureDetector(
+          _PlayButton(
+            isPlaying: provider.isPlaying,
+            palette: palette,
             onTap: () => provider.playPause(),
-            child: Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(colors: palette.gradient),
-                boxShadow: [
-                  BoxShadow(
-                    color: palette.primary.withValues(alpha:0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Icon(
-                provider.isPlaying
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
-                size: 42,
-                color: Colors.white,
-              ),
-            ),
           ),
           IconButton(
             iconSize: 42,
-            icon: const Icon(Icons.skip_next_rounded, color: Colors.white),
+            icon: Icon(Icons.skip_next_rounded, color: scheme.onSurface),
             onPressed: () => provider.next(),
           ),
           IconButton(
+            iconSize: 26,
             icon: Icon(
               _repeatIcon(provider.repeatMode),
               color: provider.repeatMode != PlaylistMode.none
-                  ? palette.primary
-                  : Colors.white60,
+                  ? active
+                  : inactive,
             ),
             onPressed: () => provider.cycleRepeat(),
           ),
@@ -307,31 +389,26 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 皮肤选择器
   void _showSkinPicker(BuildContext context, MusicProvider provider) {
+    final scheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('播放器皮肤',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('播放器皮肤', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               GridView.count(
                 shrinkWrap: true,
                 crossAxisCount: 2,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 2.2,
+                childAspectRatio: 2.3,
                 children: PlayerSkin.all.map((skin) {
-                  final selected =
-                      provider.playerSkin.name == skin.name;
+                  final selected = provider.playerSkin.name == skin.name;
                   return GestureDetector(
                     onTap: () {
                       provider.setPlayerSkin(skin.name);
@@ -339,41 +416,44 @@ class _PlayerScreenState extends State<PlayerScreen>
                     },
                     child: Container(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                         border: Border.all(
                           color: selected
-                              ? provider.palette.primary
-                              : Colors.white12,
+                              ? scheme.primary
+                              : scheme.outlineVariant,
                           width: selected ? 2 : 1,
                         ),
                         color: selected
-                            ? provider.palette.primary.withValues(alpha: 0.1)
-                            : Colors.white.withValues(alpha: 0.05),
+                            ? scheme.primary.withValues(alpha: 0.10)
+                            : Colors.transparent,
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         children: [
-                          Icon(_skinIcon(skin.name),
-                              color: selected
-                                  ? provider.palette.primary
-                                  : Colors.white54),
+                          Icon(
+                            _skinIcon(skin.name),
+                            color: selected
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
                           const SizedBox(width: 8),
-                          Text(skin.label,
-                              style: TextStyle(
-                                color: selected
-                                    ? provider.palette.primary
-                                    : Colors.white70,
-                                fontWeight: selected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              )),
+                          Text(
+                            skin.label,
+                            style: TextStyle(
+                              color: selected
+                                  ? scheme.primary
+                                  : scheme.onSurface,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 12),
             ],
           ),
         ),
@@ -404,6 +484,52 @@ class _PlayerScreenState extends State<PlayerScreen>
         opaque: false,
         pageBuilder: (context, animation, secondaryAnimation) =>
             _ArtworkViewer(song: song),
+      ),
+    );
+  }
+}
+
+/// 主播放按钮 - 渐变填充圆形
+class _PlayButton extends StatelessWidget {
+  final bool isPlaying;
+  final ThemePalette palette;
+  final VoidCallback onTap;
+
+  const _PlayButton({
+    required this.isPlaying,
+    required this.palette,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 74,
+        height: 74,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(colors: palette.gradient),
+          boxShadow: [
+            BoxShadow(
+              color: palette.primary.withValues(alpha: 0.42),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          transitionBuilder: (child, anim) =>
+              ScaleTransition(scale: anim, child: child),
+          child: Icon(
+            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            key: ValueKey(isPlaying),
+            size: 42,
+            color: Colors.white,
+          ),
+        ),
       ),
     );
   }
@@ -453,16 +579,17 @@ class _FavoriteButtonState extends State<_FavoriteButton>
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<MusicProvider>();
+    final scheme = Theme.of(context).colorScheme;
     final isFav = provider.isFavorite(widget.song);
 
     return IconButton(
-      iconSize: 30,
+      iconSize: 28,
       tooltip: isFav ? '取消喜欢' : '喜欢',
       icon: ScaleTransition(
         scale: _scale,
         child: Icon(
           isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-          color: isFav ? const Color(0xFFFF4E7A) : Colors.white60,
+          color: isFav ? const Color(0xFFFF4E7A) : scheme.onSurfaceVariant,
         ),
       ),
       onPressed: () async {
@@ -475,10 +602,6 @@ class _FavoriteButtonState extends State<_FavoriteButton>
           SnackBar(
             content: Text(nowFav ? '已添加到「我喜爱」' : '已从「我喜爱」移除'),
             duration: const Duration(milliseconds: 1200),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
           ),
         );
       },
@@ -489,8 +612,7 @@ class _FavoriteButtonState extends State<_FavoriteButton>
 /// 黑胶唱片封面（旋转动画）
 class _VinylCover extends StatefulWidget {
   final Song song;
-  final ThemePalette palette;
-  const _VinylCover({required this.song, required this.palette});
+  const _VinylCover({required this.song});
 
   @override
   State<_VinylCover> createState() => _VinylCoverState();
@@ -524,19 +646,21 @@ class _VinylCoverState extends State<_VinylCover>
       _ctrl.stop();
     }
 
+    const double discSize = 296;
+
     return Center(
       child: RotationTransition(
         turns: _ctrl,
         child: Container(
-          width: 300,
-          height: 300,
+          width: discSize,
+          height: discSize,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha:0.5),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 34,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
@@ -545,21 +669,19 @@ class _VinylCoverState extends State<_VinylCover>
             children: [
               // 黑胶唱片
               Container(
-                width: 300,
-                height: 300,
-                decoration: BoxDecoration(
+                width: discSize,
+                height: discSize,
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const RadialGradient(
+                  gradient: RadialGradient(
                     colors: [
-                      Color(0xFF2a2a2a),
-                      Color(0xFF1a1a1a),
-                      Color(0xFF0a0a0a),
+                      Color(0xFF2A2A2A),
+                      Color(0xFF1A1A1A),
+                      Color(0xFF0A0A0A),
                     ],
                   ),
                 ),
-                child: CustomPaint(
-                  painter: _VinylGroovesPainter(),
-                ),
+                child: CustomPaint(painter: _VinylGroovesPainter()),
               ),
               // 中心封面
               SizedBox(
@@ -598,7 +720,7 @@ class _VinylGroovesPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final paint = Paint()
-      ..color = Colors.black.withValues(alpha:0.3)
+      ..color = Colors.black.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     for (double r = 50; r < size.width / 2 - 10; r += 6) {
@@ -642,7 +764,9 @@ class _ArtworkViewerState extends State<_ArtworkViewer>
   }
 
   void _close() {
-    _ctrl.reverse().then((_) => Navigator.pop(context));
+    _ctrl.reverse().then((_) {
+      if (mounted) Navigator.pop(context);
+    });
   }
 
   @override
@@ -650,7 +774,7 @@ class _ArtworkViewerState extends State<_ArtworkViewer>
     return GestureDetector(
       onTap: _close,
       child: Scaffold(
-        backgroundColor: Colors.black.withValues(alpha:0.92),
+        backgroundColor: Colors.black.withValues(alpha: 0.92),
         body: SafeArea(
           child: Column(
             children: [
@@ -668,7 +792,7 @@ class _ArtworkViewerState extends State<_ArtworkViewer>
                     child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(AppRadius.xl),
                         child: AlbumArtWidget(
                           song: widget.song,
                           size: double.infinity,

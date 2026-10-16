@@ -181,18 +181,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               ],
             ),
           ),
-          IconButton(
-            icon: Icon(
-              context.read<MusicProvider>().isFavorite(song)
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              color: context.read<MusicProvider>().isFavorite(song)
-                  ? Colors.red
-                  : Colors.white60,
-            ),
-            onPressed: () =>
-                context.read<MusicProvider>().toggleFavorite(song),
-          ),
+          _FavoriteButton(song: song),
         ],
       ),
     );
@@ -416,6 +405,83 @@ class _PlayerScreenState extends State<PlayerScreen>
         pageBuilder: (context, animation, secondaryAnimation) =>
             _ArtworkViewer(song: song),
       ),
+    );
+  }
+}
+
+/// 收藏爱心按钮 - 带弹跳动画，加入「我喜爱」歌单
+class _FavoriteButton extends StatefulWidget {
+  final Song song;
+  const _FavoriteButton({required this.song});
+
+  @override
+  State<_FavoriteButton> createState() => _FavoriteButtonState();
+}
+
+class _FavoriteButtonState extends State<_FavoriteButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 340),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.45)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.45, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 60,
+      ),
+    ]).animate(_ctrl);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<MusicProvider>();
+    final isFav = provider.isFavorite(widget.song);
+
+    return IconButton(
+      iconSize: 30,
+      tooltip: isFav ? '取消喜欢' : '喜欢',
+      icon: ScaleTransition(
+        scale: _scale,
+        child: Icon(
+          isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          color: isFav ? const Color(0xFFFF4E7A) : Colors.white60,
+        ),
+      ),
+      onPressed: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        await provider.toggleFavorite(widget.song);
+        if (!mounted) return;
+        _ctrl.forward(from: 0);
+        final nowFav = provider.isFavorite(widget.song);
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(nowFav ? '已添加到「我喜爱」' : '已从「我喜爱」移除'),
+            duration: const Duration(milliseconds: 1200),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      },
     );
   }
 }

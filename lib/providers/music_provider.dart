@@ -27,6 +27,7 @@ class MusicProvider extends ChangeNotifier {
   List<Song> _filteredSongs = [];
   List<MusicSource> _sources = [];
   List<Playlist> _playlists = [];
+  List<Song> _favoriteSongs = [];
   List<LyricLine> _currentLyrics = [];
   final Map<String, Uint8List> _artworkCache = {};
   final Map<String, String> _onlineArtCache = {};
@@ -40,6 +41,7 @@ class MusicProvider extends ChangeNotifier {
   bool _darkMode = true;
   String _paletteName = 'purple';
   String _playerSkinName = 'modern';
+  bool _includePrerelease = false;
 
   // 流订阅
   StreamSubscription? _stateSub;
@@ -54,9 +56,11 @@ class MusicProvider extends ChangeNotifier {
     await _storage.init();
     _sources = _storage.getSources();
     _playlists = _storage.getPlaylists();
+    _favoriteSongs = _storage.getFavoriteSongs();
     _darkMode = _storage.isDarkMode();
     _paletteName = _storage.getPalette();
     _playerSkinName = _storage.getPlayerSkin();
+    _includePrerelease = _storage.isIncludePrerelease();
 
     // 订阅播放服务
     _stateSub = _player.playbackStateStream.listen((state) {
@@ -98,6 +102,14 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setPlayerSkin(String name) async {
     _playerSkinName = name;
     await _storage.setPlayerSkin(name);
+    notifyListeners();
+  }
+
+  bool get includePrerelease => _includePrerelease;
+
+  Future<void> setIncludePrerelease(bool v) async {
+    _includePrerelease = v;
+    await _storage.setIncludePrerelease(v);
     notifyListeners();
   }
 
@@ -269,13 +281,27 @@ class MusicProvider extends ChangeNotifier {
     return map;
   }
 
-  // === 收藏 ===
-  void toggleFavorite(Song song) {
-    _storage.toggleFavorite(song.id);
+  // === 收藏（「我喜爱」歌单）===
+  List<Song> get favoriteSongs => _favoriteSongs;
+
+  Future<void> toggleFavorite(Song song) async {
+    final idx = _favoriteSongs.indexWhere((s) => s.id == song.id);
+    if (idx >= 0) {
+      _favoriteSongs.removeAt(idx);
+    } else {
+      _favoriteSongs.insert(0, song);
+    }
+    await _storage.saveFavoriteSongs(_favoriteSongs);
     notifyListeners();
   }
 
-  bool isFavorite(Song song) => _storage.isFavorite(song.id);
+  Future<void> removeFavorite(Song song) async {
+    _favoriteSongs.removeWhere((s) => s.id == song.id);
+    await _storage.saveFavoriteSongs(_favoriteSongs);
+    notifyListeners();
+  }
+
+  bool isFavorite(Song song) => _favoriteSongs.any((s) => s.id == song.id);
 
   // === 搜索 ===
   void search(String query) {

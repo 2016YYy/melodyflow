@@ -13,6 +13,7 @@ class StorageService {
   static const String _playerSkinKey = 'player_skin';
   static const String _playlistsKey = 'playlists';
   static const String _autoUpdateKey = 'auto_update_check';
+  static const String _prereleaseKey = 'include_prerelease';
   static const String _lastSongKey = 'last_playing_song';
   static const String _lastPositionKey = 'last_position';
 
@@ -47,22 +48,27 @@ class StorageService {
     await saveSources(sources);
   }
 
-  // === 收藏 ===
-  List<String> getFavoriteIds() {
-    return _prefs.getStringList(_favoritesKey) ?? [];
-  }
-
-  Future<void> toggleFavorite(String songId) async {
-    final favs = getFavoriteIds();
-    if (favs.contains(songId)) {
-      favs.remove(songId);
-    } else {
-      favs.add(songId);
+  // === 收藏（存储完整歌曲，支持本地与第三方音源，「我喜爱」歌单）===
+  List<Song> getFavoriteSongs() {
+    final data = _prefs.getStringList(_favoritesKey) ?? [];
+    final result = <Song>[];
+    for (final item in data) {
+      try {
+        final decoded = jsonDecode(item);
+        if (decoded is Map<String, dynamic>) {
+          result.add(Song.fromMap(decoded));
+        }
+      } catch (_) {
+        // 兼容旧版仅存歌曲 ID 的格式，无法还原时跳过
+      }
     }
-    await _prefs.setStringList(_favoritesKey, favs);
+    return result;
   }
 
-  bool isFavorite(String songId) => getFavoriteIds().contains(songId);
+  Future<void> saveFavoriteSongs(List<Song> songs) async {
+    final data = songs.map((s) => jsonEncode(s.toMap())).toList();
+    await _prefs.setStringList(_favoritesKey, data);
+  }
 
   // === 主题 ===
   bool isDarkMode() => _prefs.getBool(_themeKey) ?? true;
@@ -118,6 +124,10 @@ class StorageService {
   bool isAutoUpdateCheck() => _prefs.getBool(_autoUpdateKey) ?? true;
   Future<void> setAutoUpdateCheck(bool v) =>
       _prefs.setBool(_autoUpdateKey, v);
+
+  bool isIncludePrerelease() => _prefs.getBool(_prereleaseKey) ?? false;
+  Future<void> setIncludePrerelease(bool v) =>
+      _prefs.setBool(_prereleaseKey, v);
 
   // === 上次播放 ===
   Future<void> saveLastPlaying(Song? song, Duration position) async {

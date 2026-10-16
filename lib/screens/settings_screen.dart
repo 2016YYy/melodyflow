@@ -1,12 +1,13 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
-import '../services/update_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/section_tiles.dart';
+import '../widgets/update_dialogs.dart';
+import 'about_screen.dart';
 
-/// 设置界面 - 包含关于、检查更新、主题
+/// 设置界面 - 分组列表样式
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -15,13 +16,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final UpdateService _updateService = UpdateService();
   String _appVersion = '';
   bool _checking = false;
-  bool _downloading = false;
-  double _downloadProgress = 0;
-  String _downloadStatus = '';
-  CancelToken? _cancelToken;
 
   @override
   void initState() {
@@ -31,246 +27,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
     setState(() => _appVersion = info.version);
   }
 
-  /// 检查更新
   Future<void> _checkUpdate() async {
     setState(() => _checking = true);
-    final release = await _updateService.checkForUpdates();
-    setState(() {
-      _checking = false;
-    });
-    if (!mounted) return;
-    if (release == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已是最新版本')),
-      );
-    } else {
-      _showUpdateDialog(release);
-    }
-  }
-
-  void _showUpdateDialog(ReleaseInfo release) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('发现新版本 ${release.tagName}'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(release.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Text(release.body.isEmpty ? '暂无更新说明' : release.body),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('稍后'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _downloadUpdate(release);
-            },
-            child: const Text('立即更新'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 下载更新（可挂后台）
-  Future<void> _downloadUpdate(ReleaseInfo release) async {
-    final asset = _updateService.matchAssetForPlatform(release.assets);
-    if (asset == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('未找到当前平台的安装包')),
-      );
-      return;
-    }
-
-    setState(() {
-      _downloading = true;
-      _downloadProgress = 0;
-      _downloadStatus = '准备下载...';
-    });
-
-    _cancelToken = CancelToken();
-    final path = await _updateService.downloadUpdate(
-      asset,
-      cancelToken: _cancelToken,
-      onProgress: (received, total) {
-        if (total > 0) {
-          setState(() {
-            _downloadProgress = received / total;
-            _downloadStatus =
-                '下载中 ${(received / total * 100).toStringAsFixed(1)}%';
-          });
-        }
-      },
-    );
-
-    if (!mounted) return;
-    setState(() {
-      _downloading = false;
-      _downloadStatus = path != null ? '下载完成' : '下载失败';
-    });
-
-    if (path != null) {
-      // 校验哈希
-      final expectedHash =
-          _updateService.parseHashFromBody(release.body, asset.name);
-      if (expectedHash != null) {
-        final valid =
-            await _updateService.verifyUpdateIntegrity(path, expectedHash);
-        if (!mounted) return;
-        if (!valid) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('文件校验失败，可能已被篡改')),
-          );
-          return;
-        }
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已下载到: $path，请手动安装（后续版本将支持自动安装）')),
-      );
-    }
+    await runUpdateCheck(context);
+    if (mounted) setState(() => _checking = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<MusicProvider>();
+    final palette = provider.palette;
+
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
+        padding: EdgeInsets.zero,
         children: [
-          // 关于
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('关于 MelodyFlow'),
-            subtitle: Text('版本 $_appVersion'),
-            onTap: () => _showAboutDialog(),
+          // 外观
+          const SectionHeader('外观'),
+          SwitchTile(
+            icon: Icons.dark_mode_rounded,
+            title: '深色模式',
+            subtitle: '切换深色 / 浅色主题',
+            value: provider.darkMode,
+            palette: palette,
+            onChanged: provider.setDarkMode,
           ),
-          const Divider(),
-          // 检查更新
-          ListTile(
-            leading: const Icon(Icons.system_update),
-            title: const Text('检查更新'),
-            subtitle: Text(_downloading ? _downloadStatus : '当前版本 $_appVersion'),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ActionTile(
+            icon: Icons.palette_rounded,
+            title: '主题配色',
+            subtitle: provider.palette.label,
+            palette: palette,
+            trailing: _PaletteDot(palette: provider.palette),
+            onTap: () => _showPalettePicker(context, provider),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ActionTile(
+            icon: Icons.style_rounded,
+            title: '播放器皮肤',
+            subtitle: provider.playerSkin.label,
+            palette: palette,
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _showSkinPicker(context, provider),
+          ),
+
+          // 应用更新
+          const SectionHeader('应用更新'),
+          ActionTile(
+            icon: Icons.download_rounded,
+            title: '检查更新',
+            subtitle: '当前版本 ${_appVersion.isEmpty ? '-' : _appVersion}',
+            palette: palette,
             trailing: _checking
                 ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.chevron_right),
-            onTap: _downloading ? null : _checkUpdate,
+                : null,
+            onTap: _checking ? null : _checkUpdate,
           ),
-          if (_downloading)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  LinearProgressIndicator(value: _downloadProgress),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_downloadStatus,
-                          style: const TextStyle(fontSize: 12)),
-                      TextButton(
-                        onPressed: () {
-                          _cancelToken?.cancel();
-                          setState(() {
-                            _downloading = false;
-                            _downloadStatus = '已取消';
-                          });
-                        },
-                        child: const Text('取消',
-                            style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          const Divider(),
-          // 主题切换
-          SwitchListTile(
-            secondary: const Icon(Icons.dark_mode_rounded),
-            title: const Text('深色模式'),
-            value: provider.storage.isDarkMode(),
-            onChanged: (v) {
-              provider.setDarkMode(v);
-            },
-          ),
-          // 主题配色
-          ListTile(
-            leading: const Icon(Icons.palette_rounded),
-            title: const Text('主题配色'),
-            subtitle: Text(provider.palette.label),
-            trailing: _PaletteDot(palette: provider.palette),
-            onTap: () => _showPalettePicker(context, provider),
-          ),
-          // 播放器皮肤
-          ListTile(
-            leading: const Icon(Icons.style_rounded),
-            title: const Text('播放器皮肤'),
-            subtitle: Text(provider.playerSkin.label),
-            onTap: () => _showSkinPicker(context, provider),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.update_rounded),
-            title: const Text('启动时自动检查更新'),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          SwitchTile(
+            icon: Icons.update_rounded,
+            title: '启动时自动检查更新',
+            subtitle: '打开应用时自动检查新版本',
             value: provider.storage.isAutoUpdateCheck(),
+            palette: palette,
             onChanged: (v) {
               provider.storage.setAutoUpdateCheck(v);
               setState(() {});
             },
           ),
-          const Divider(),
-          // 免责声明
-          ListTile(
-            leading: const Icon(Icons.gavel),
-            title: const Text('免责声明'),
-            onTap: () => _showDisclaimer(),
+
+          // 关于
+          const SectionHeader('关于'),
+          ActionTile(
+            icon: Icons.info_outline_rounded,
+            title: '关于 MelodyFlow',
+            subtitle: '版本 ${_appVersion.isEmpty ? '-' : _appVersion}',
+            palette: palette,
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AboutScreen()),
+            ),
           ),
-          ListTile(
-            leading: const Icon(Icons.description),
-            title: const Text('开源许可'),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ActionTile(
+            icon: Icons.gavel_rounded,
+            title: '免责声明',
+            subtitle: '使用前请阅读相关条款',
+            palette: palette,
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: _showDisclaimer,
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ActionTile(
+            icon: Icons.description_rounded,
+            title: '开源软件许可',
+            subtitle: '查看第三方开源许可',
+            palette: palette,
+            trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => showLicensePage(context: context),
           ),
+
+          const SizedBox(height: 32),
         ],
       ),
-    );
-  }
-
-  void _showAboutDialog() {
-    showAboutDialog(
-      context: context,
-      applicationName: 'MelodyFlow',
-      applicationVersion: _appVersion,
-      applicationIcon: Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: LinearGradient(
-              colors: context.read<MusicProvider>().palette.gradient),
-        ),
-        child: const Icon(Icons.music_note_rounded,
-            color: Colors.white, size: 36),
-      ),
-      applicationLegalese: '© 2025 MelodyFlow 开源项目',
-      children: const [
-        Text('开源跨平台音乐播放器，支持本地音乐扫描、第三方音源、在线歌词与封面。'),
-      ],
     );
   }
 
@@ -319,7 +188,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             boxShadow: selected
                                 ? [
                                     BoxShadow(
-                                        color: p.primary.withValues(alpha:0.5),
+                                        color:
+                                            p.primary.withValues(alpha: 0.5),
                                         blurRadius: 12)
                                   ]
                                 : null,
@@ -406,6 +276,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('免责声明'),
         content: const SingleChildScrollView(
           child: Text(

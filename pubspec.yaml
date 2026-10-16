@@ -2,7 +2,7 @@ name: melodyflow
 description: "MelodyFlow - 开源跨平台音乐播放器，支持本地音乐、第三方音源、在线歌词与封面"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.12.0

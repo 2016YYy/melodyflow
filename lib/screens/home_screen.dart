@@ -4,15 +4,17 @@ import '../models/playlist.dart';
 import '../models/song.dart';
 import '../providers/music_provider.dart';
 import '../widgets/album_art_widget.dart';
+import '../widgets/integrated_nav_bar.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_tile.dart';
+import 'favorites_screen.dart';
 import 'group_songs_screen.dart';
 import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
-import 'sources_screen.dart';
 import 'settings_screen.dart';
+import 'sources_screen.dart';
 
-/// 首页 - 歌曲 / 专辑 / 艺术家 / 歌单
+/// 首页外壳 - 底部菜单（音乐 / 音源 / 设置）
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -20,11 +22,71 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
+class _HomeScreenState extends State<HomeScreen> {
+  int _navIndex = 0;
+
+  static const List<IntegratedNavItem> _navItems = [
+    IntegratedNavItem(
+        icon: Icons.library_music_outlined,
+        activeIcon: Icons.library_music_rounded,
+        label: '音乐'),
+    IntegratedNavItem(
+        icon: Icons.cloud_outlined,
+        activeIcon: Icons.cloud_rounded,
+        label: '音源'),
+    IntegratedNavItem(
+        icon: Icons.settings_outlined,
+        activeIcon: Icons.settings_rounded,
+        label: '设置'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<MusicProvider>();
+
+    // 切换菜单时若已进入音源/设置，点击音乐回到主页
+    return Scaffold(
+      body: IndexedStack(
+        index: _navIndex,
+        children: const [
+          MusicLibraryPage(),
+          SourcesScreen(),
+          SettingsScreen(),
+        ],
+      ),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MiniPlayer(onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PlayerScreen()),
+            );
+          }),
+          IntegratedNavBar(
+            currentIndex: _navIndex,
+            palette: provider.palette,
+            items: _navItems,
+            onTap: (i) => setState(() => _navIndex = i),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 音乐库页面 - 歌曲 / 专辑 / 艺术家 / 歌单
+class MusicLibraryPage extends StatefulWidget {
+  const MusicLibraryPage({super.key});
+
+  @override
+  State<MusicLibraryPage> createState() => _MusicLibraryPageState();
+}
+
+class _MusicLibraryPageState extends State<MusicLibraryPage>
     with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   late final TabController _tabController;
-  int _navIndex = 0;
 
   @override
   void initState() {
@@ -51,10 +113,30 @@ class _HomeScreenState extends State<HomeScreen>
       appBar: AppBar(
         title: const Text('MelodyFlow'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: '重新扫描',
-            onPressed: () => provider.scanLocalMusic(),
+          // 右上角「扫描歌曲」功能
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton.icon(
+              onPressed:
+                  provider.isScanning ? null : () => provider.scanLocalMusic(),
+              icon: provider.isScanning
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.radar_rounded, size: 18),
+              label: Text(provider.isScanning ? '扫描中' : '扫描歌曲'),
+              style: TextButton.styleFrom(
+                foregroundColor: palette.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                      color: palette.primary.withValues(alpha: 0.4)),
+                ),
+              ),
+            ),
           ),
         ],
         bottom: PreferredSize(
@@ -68,16 +150,15 @@ class _HomeScreenState extends State<HomeScreen>
                 child: TextField(
                   controller: _searchController,
                   onChanged: provider.search,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: '搜索歌曲、艺术家、专辑...',
-                    prefixIcon: const Icon(Icons.search_rounded),
+                    prefixIcon: Icon(Icons.search_rounded),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.all(Radius.circular(24)),
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 4),
+                    contentPadding: EdgeInsets.symmetric(vertical: 4),
                   ),
                 ),
               ),
@@ -91,8 +172,8 @@ class _HomeScreenState extends State<HomeScreen>
                 indicatorColor: palette.primary,
                 indicatorWeight: 3,
                 indicatorSize: TabBarIndicatorSize.label,
-                labelStyle: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600),
+                labelStyle:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 tabs: const [
                   Tab(text: '歌曲'),
                   Tab(text: '专辑'),
@@ -115,42 +196,6 @@ class _HomeScreenState extends State<HomeScreen>
                 _PlaylistsTab(provider: provider),
               ],
             ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          MiniPlayer(onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PlayerScreen()),
-            );
-          }),
-          NavigationBar(
-            selectedIndex: _navIndex,
-            onDestinationSelected: (i) {
-              setState(() => _navIndex = i);
-              if (i == 1) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SourcesScreen()),
-                ).then((_) => setState(() => _navIndex = 0));
-              } else if (i == 2) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                ).then((_) => setState(() => _navIndex = 0));
-              }
-            },
-            destinations: const [
-              NavigationDestination(
-                  icon: Icon(Icons.music_note_rounded), label: '音乐'),
-              NavigationDestination(
-                  icon: Icon(Icons.cloud_rounded), label: '音源'),
-              NavigationDestination(
-                  icon: Icon(Icons.settings_rounded), label: '设置'),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }
@@ -166,7 +211,7 @@ class _SongsTab extends StatelessWidget {
       return _EmptyState(
         icon: Icons.library_music_rounded,
         text: '还没有找到音乐',
-        subtext: '点击右上角刷新按钮扫描本地音乐',
+        subtext: '点击右上角「扫描歌曲」扫描本地音乐',
         onAction: () => provider.scanLocalMusic(),
         actionLabel: '扫描本地音乐',
       );
@@ -190,7 +235,7 @@ class _AlbumsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final albums = provider.albums;
     if (albums.isEmpty) {
-      return _EmptyState(
+      return const _EmptyState(
         icon: Icons.album_rounded,
         text: '暂无专辑',
         subtext: '扫描音乐后将按专辑分类',
@@ -277,7 +322,7 @@ class _ArtistsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final artists = provider.artists;
     if (artists.isEmpty) {
-      return _EmptyState(
+      return const _EmptyState(
         icon: Icons.person_rounded,
         text: '暂无艺术家',
         subtext: '扫描音乐后将按艺术家分类',
@@ -296,8 +341,8 @@ class _ArtistsTab extends StatelessWidget {
             backgroundColor: Colors.transparent,
             child: GradientAvatar(name: name, size: 52),
           ),
-          title: Text(name,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          title:
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text('${songs.length} 首歌曲'),
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => Navigator.push(
@@ -327,7 +372,6 @@ class GradientAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.read<MusicProvider>().palette;
-    // 根据名称生成稳定的色相
     final hash = name.codeUnits.fold(0, (a, b) => a + b);
     final colors = palette.coverPlaceholder;
     final startIdx = hash % colors.length;
@@ -355,7 +399,7 @@ class GradientAvatar extends StatelessWidget {
   }
 }
 
-/// 歌单标签页
+/// 歌单标签页（置顶「我喜爱」系统歌单）
 class _PlaylistsTab extends StatelessWidget {
   final MusicProvider provider;
   const _PlaylistsTab({required this.provider});
@@ -363,27 +407,34 @@ class _PlaylistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playlists = provider.playlists;
+    final palette = provider.palette;
+
     return Stack(
       children: [
-        playlists.isEmpty
-            ? _EmptyState(
-                icon: Icons.playlist_play_rounded,
-                text: '还没有歌单',
-                subtext: '点击右下角按钮创建你的第一个歌单',
+        ListView(
+          padding: const EdgeInsets.only(bottom: 100),
+          children: [
+            // 置顶：我喜爱（系统歌单）
+            _FavoritesTile(count: provider.favoriteSongs.length),
+            if (playlists.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 60),
+                child: _EmptyState(
+                  icon: Icons.playlist_play_rounded,
+                  text: '还没有自建歌单',
+                  subtext: '点击右下角按钮创建你的第一个歌单',
+                ),
               )
-            : ListView.builder(
-                padding: const EdgeInsets.only(bottom: 100),
-                itemCount: playlists.length,
-                itemBuilder: (context, index) {
-                  return _PlaylistTile(playlist: playlists[index]);
-                },
-              ),
+            else
+              ...playlists.map((p) => _PlaylistTile(playlist: p)),
+          ],
+        ),
         Positioned(
           right: 16,
           bottom: 16,
           child: FloatingActionButton(
             onPressed: () => _showCreateDialog(context),
-            backgroundColor: provider.palette.primary,
+            backgroundColor: palette.primary,
             child: const Icon(Icons.add_rounded, color: Colors.white),
           ),
         ),
@@ -404,19 +455,47 @@ class _PlaylistsTab extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
             onPressed: () {
               if (ctrl.text.trim().isEmpty) return;
-              context
-                  .read<MusicProvider>()
-                  .createPlaylist(ctrl.text.trim());
+              context.read<MusicProvider>().createPlaylist(ctrl.text.trim());
               Navigator.pop(ctx);
             },
             child: const Text('创建'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 「我喜爱」置顶入口
+class _FavoritesTile extends StatelessWidget {
+  final int count;
+  const _FavoritesTile({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF4E7A), Color(0xFFEC4899)],
+          ),
+        ),
+        child: const Icon(Icons.favorite_rounded, color: Colors.white),
+      ),
+      title:
+          const Text('我喜爱', style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text('$count 首歌曲 · 系统歌单'),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const FavoritesScreen()),
       ),
     );
   }
@@ -449,8 +528,8 @@ class _PlaylistTile extends StatelessWidget {
                     color: Colors.white70),
               ),
       ),
-      title: Text(playlist.name,
-          style: const TextStyle(fontWeight: FontWeight.w600)),
+      title:
+          Text(playlist.name, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text('${playlist.songs.length} 首歌曲'),
       trailing: PopupMenuButton<String>(
         onSelected: (v) {
@@ -459,9 +538,9 @@ class _PlaylistTile extends StatelessWidget {
             context.read<MusicProvider>().deletePlaylist(playlist.id);
           }
         },
-        itemBuilder: (_) => [
-          const PopupMenuItem(value: 'rename', child: Text('重命名')),
-          const PopupMenuItem(
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'rename', child: Text('重命名')),
+          PopupMenuItem(
               value: 'delete',
               child: Text('删除', style: TextStyle(color: Colors.red))),
         ],
@@ -488,8 +567,7 @@ class _PlaylistTile extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
             onPressed: () {
               if (ctrl.text.trim().isEmpty) return;
@@ -540,8 +618,8 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(text,
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.w600)),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(subtext, style: Theme.of(context).textTheme.bodyMedium),
           if (onAction != null) ...[

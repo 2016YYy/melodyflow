@@ -7,8 +7,8 @@ void main() {
   testWidgets('Theme renders correctly', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
+        theme: AppTheme.buildTheme(ThemePalettes.purple, false),
+        darkTheme: AppTheme.buildTheme(ThemePalettes.purple, true),
         home: const Scaffold(body: Center(child: Text('MelodyFlow'))),
       ),
     );

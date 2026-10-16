@@ -18,7 +18,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final UpdateService _updateService = UpdateService();
   String _appVersion = '';
   bool _checking = false;
-  ReleaseInfo? _latestRelease;
   bool _downloading = false;
   double _downloadProgress = 0;
   String _downloadStatus = '';
@@ -41,7 +40,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final release = await _updateService.checkForUpdates();
     setState(() {
       _checking = false;
-      _latestRelease = release;
     });
     if (!mounted) return;
     if (release == null) {
@@ -205,16 +203,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
           // 主题切换
           SwitchListTile(
-            secondary: const Icon(Icons.dark_mode),
+            secondary: const Icon(Icons.dark_mode_rounded),
             title: const Text('深色模式'),
             value: provider.storage.isDarkMode(),
             onChanged: (v) {
-              provider.storage.setDarkMode(v);
-              setState(() {});
+              provider.setDarkMode(v);
             },
           ),
+          // 主题配色
+          ListTile(
+            leading: const Icon(Icons.palette_rounded),
+            title: const Text('主题配色'),
+            subtitle: Text(provider.palette.label),
+            trailing: _PaletteDot(palette: provider.palette),
+            onTap: () => _showPalettePicker(context, provider),
+          ),
+          // 播放器皮肤
+          ListTile(
+            leading: const Icon(Icons.style_rounded),
+            title: const Text('播放器皮肤'),
+            subtitle: Text(provider.playerSkin.label),
+            onTap: () => _showSkinPicker(context, provider),
+          ),
           SwitchListTile(
-            secondary: const Icon(Icons.update),
+            secondary: const Icon(Icons.update_rounded),
             title: const Text('启动时自动检查更新'),
             value: provider.storage.isAutoUpdateCheck(),
             onChanged: (v) {
@@ -249,14 +261,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
         height: 60,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          gradient: AppTheme.gradient,
+          gradient: LinearGradient(
+              colors: context.read<MusicProvider>().palette.gradient),
         ),
-        child: const Icon(Icons.music_note, color: Colors.white, size: 36),
+        child: const Icon(Icons.music_note_rounded,
+            color: Colors.white, size: 36),
       ),
       applicationLegalese: '© 2025 MelodyFlow 开源项目',
       children: const [
         Text('开源跨平台音乐播放器，支持本地音乐扫描、第三方音源、在线歌词与封面。'),
       ],
+    );
+  }
+
+  /// 主题配色选择器
+  void _showPalettePicker(BuildContext context, MusicProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('主题配色',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              GridView.count(
+                shrinkWrap: true,
+                crossAxisCount: 3,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 1.1,
+                children: ThemePalettes.all.map((p) {
+                  final selected = provider.palette.name == p.name;
+                  return GestureDetector(
+                    onTap: () {
+                      provider.setPalette(p.name);
+                      Navigator.pop(ctx);
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(colors: p.gradient),
+                            border: selected
+                                ? Border.all(color: Colors.white, width: 3)
+                                : null,
+                            boxShadow: selected
+                                ? [
+                                    BoxShadow(
+                                        color: p.primary.withValues(alpha:0.5),
+                                        blurRadius: 12)
+                                  ]
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(p.label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: selected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: selected ? p.primary : null,
+                            )),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 播放器皮肤选择器
+  void _showSkinPicker(BuildContext context, MusicProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('播放器皮肤',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              ...PlayerSkin.all.map((skin) {
+                final selected = provider.playerSkin.name == skin.name;
+                return ListTile(
+                  leading: Icon(
+                    skin.name == 'classic'
+                        ? Icons.music_note_rounded
+                        : skin.name == 'modern'
+                            ? Icons.album_rounded
+                            : skin.name == 'minimal'
+                                ? Icons.remove_rounded
+                                : Icons.disc_full_rounded,
+                    color: selected ? provider.palette.primary : null,
+                  ),
+                  title: Text(skin.label,
+                      style: TextStyle(
+                        fontWeight: selected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color: selected ? provider.palette.primary : null,
+                      )),
+                  trailing: selected
+                      ? Icon(Icons.check_rounded,
+                          color: provider.palette.primary)
+                      : null,
+                  onTap: () {
+                    provider.setPlayerSkin(skin.name);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -281,6 +423,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('我知道了'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 主题配色圆点指示器
+class _PaletteDot extends StatelessWidget {
+  final ThemePalette palette;
+  const _PaletteDot({required this.palette});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(colors: palette.gradient),
       ),
     );
   }

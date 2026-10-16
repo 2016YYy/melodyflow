@@ -14,6 +14,7 @@ class Song {
   final String? sourceId; // 第三方源ID
   final int? size; // 文件大小字节
   final String? mimeType;
+  final Map<String, String>? httpHeaders; // 流媒体请求头（WebDAV等认证用）
 
   const Song({
     required this.id,
@@ -30,6 +31,7 @@ class Song {
     this.sourceId,
     this.size,
     this.mimeType,
+    this.httpHeaders,
   });
 
   factory Song.fromMap(Map<String, dynamic> map) {
@@ -51,6 +53,7 @@ class Song {
       sourceId: map['sourceId']?.toString(),
       size: (map['size'] as num?)?.toInt(),
       mimeType: map['mimeType']?.toString(),
+      httpHeaders: map['httpHeaders'] as Map<String, String>?,
     );
   }
 
@@ -70,6 +73,7 @@ class Song {
       'sourceId': sourceId,
       'size': size,
       'mimeType': mimeType,
+      'httpHeaders': httpHeaders,
     };
   }
 
@@ -88,6 +92,7 @@ class Song {
     String? sourceId,
     int? size,
     String? mimeType,
+    Map<String, String>? httpHeaders,
   }) {
     return Song(
       id: id ?? this.id,
@@ -104,6 +109,7 @@ class Song {
       sourceId: sourceId ?? this.sourceId,
       size: size ?? this.size,
       mimeType: mimeType ?? this.mimeType,
+      httpHeaders: httpHeaders ?? this.httpHeaders,
     );
   }
 

@@ -30,6 +30,40 @@ void main() {
     expect(AppSpace.lg < AppSpace.xl, isTrue);
   });
 
+  test('四种播放器皮肤配置互不相同且可正确解析', () {
+    expect(PlayerSkin.all.length, 4);
+    final names = PlayerSkin.all.map((s) => s.name).toSet();
+    final labels = PlayerSkin.all.map((s) => s.label).toSet();
+    final icons = PlayerSkin.all.map((s) => s.icon).toSet();
+    expect(names.length, 4);
+    expect(labels.length, 4);
+    expect(icons.length, 4);
+    for (final skin in PlayerSkin.all) {
+      expect(PlayerSkin.fromName(skin.name).name, skin.name);
+    }
+  });
+
+  test('语义色互不相同且取值有效', () {
+    final colors = {AppColors.favorite, AppColors.favoriteAlt, AppColors.danger};
+    expect(colors.length, 3);
+  });
+
+  test('主题各组件圆角与设计规范一致', () {
+    double topLeftRadius(ShapeBorder? shape) =>
+        ((shape as RoundedRectangleBorder).borderRadius)
+            .resolve(TextDirection.ltr)
+            .topLeft
+            .x;
+
+    for (final dark in [false, true]) {
+      final theme = AppTheme.buildTheme(ThemePalettes.purple, dark);
+      expect(topLeftRadius(theme.cardTheme.shape), AppRadius.lg);
+      expect(topLeftRadius(theme.dialogTheme.shape), AppRadius.xl);
+      expect(topLeftRadius(theme.floatingActionButtonTheme.shape), AppRadius.lg);
+      expect(topLeftRadius(theme.popupMenuTheme.shape), AppRadius.md);
+    }
+  });
+
   testWidgets('应用在浅色主题下可正常渲染', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(

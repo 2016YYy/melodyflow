@@ -404,7 +404,6 @@ class _PlaylistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playlists = provider.playlists;
-    final palette = provider.palette;
 
     return Stack(
       children: [
@@ -431,8 +430,7 @@ class _PlaylistsTab extends StatelessWidget {
           bottom: 16,
           child: FloatingActionButton(
             onPressed: () => _showCreateDialog(context),
-            backgroundColor: palette.primary,
-            child: const Icon(Icons.add_rounded, color: Colors.white),
+            child: const Icon(Icons.add_rounded),
           ),
         ),
       ],
@@ -481,7 +479,7 @@ class _FavoritesTile extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppRadius.sm),
           gradient: const LinearGradient(
-            colors: [Color(0xFFFF4E7A), Color(0xFFEC4899)],
+            colors: [AppColors.favorite, AppColors.favoriteAlt],
           ),
         ),
         child: const Icon(Icons.favorite_rounded, color: Colors.white),
@@ -539,7 +537,7 @@ class _PlaylistTile extends StatelessWidget {
           PopupMenuItem(value: 'rename', child: Text('重命名')),
           PopupMenuItem(
               value: 'delete',
-              child: Text('删除', style: TextStyle(color: Colors.red))),
+              child: Text('删除', style: TextStyle(color: AppColors.danger))),
         ],
       ),
       onTap: () => Navigator.push(

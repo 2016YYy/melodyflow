@@ -48,10 +48,8 @@ class FavoritesScreen extends StatelessWidget {
                   return Dismissible(
                     key: ValueKey(song.id),
                     direction: DismissDirection.endToStart,
-                    background: _dismissBackground(
-                      const Icon(Icons.heart_broken_rounded,
-                          color: Colors.white),
-                    ),
+                    background:
+                        const SwipeDismissBackground(icon: Icons.heart_broken_rounded),
                     onDismissed: (_) => provider.removeFavorite(song),
                     child: SongTile(song: song, index: index),
                   );
@@ -69,19 +67,6 @@ class FavoritesScreen extends StatelessWidget {
     final list = List<Song>.from(songs)..shuffle();
     return list;
   }
-}
-
-Widget _dismissBackground(Widget icon) {
-  return Container(
-    alignment: Alignment.centerRight,
-    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-    padding: const EdgeInsets.only(right: 20),
-    decoration: BoxDecoration(
-      color: const Color(0xFFE5484D),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: icon,
-  );
 }
 
 class _EmptyFavorites extends StatelessWidget {

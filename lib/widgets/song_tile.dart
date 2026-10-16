@@ -227,16 +227,17 @@ class SongTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _infoRow('标题', song.title),
-              _infoRow('艺术家', song.artist),
-              _infoRow('专辑', song.album),
+              _infoRow(context, '标题', song.title),
+              _infoRow(context, '艺术家', song.artist),
+              _infoRow(context, '专辑', song.album),
               _infoRow(
+                  context,
                   '时长',
                   song.duration.inSeconds > 0
                       ? '${song.duration.inMinutes}:${(song.duration.inSeconds % 60).toString().padLeft(2, '0')}'
                       : '未知'),
-              _infoRow('来源', song.sourceType.name),
-              _infoRow('路径', song.uri),
+              _infoRow(context, '来源', song.sourceType.name),
+              _infoRow(context, '路径', song.uri),
             ],
           ),
         ),
@@ -249,7 +250,7 @@ class SongTile extends StatelessWidget {
     );
   }
 
-  static Widget _infoRow(String label, String value) {
+  static Widget _infoRow(BuildContext context, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -262,12 +263,33 @@ class SongTile extends StatelessWidget {
           ),
           Expanded(
             child: Text(value,
-                style: const TextStyle(color: Colors.grey),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 滑动删除背景（歌单 / 我喜爱的滑出操作）
+class SwipeDismissBackground extends StatelessWidget {
+  final IconData icon;
+  const SwipeDismissBackground({super.key, this.icon = Icons.delete_rounded});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.centerRight,
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      padding: const EdgeInsets.only(right: 20),
+      decoration: BoxDecoration(
+        color: AppColors.danger,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Icon(icon, color: Colors.white),
     );
   }
 }

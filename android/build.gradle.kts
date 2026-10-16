@@ -21,6 +21,15 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
+// JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。
+// 该检查不影响 APK 产物本身，这里统一跳过以保证 release 构建稳定。
+subprojects {
+    tasks.matching { it.name.startsWith("lintVital") }.configureEach {
+        enabled = false
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

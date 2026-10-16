@@ -7,6 +7,32 @@ import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
 import 'webdav_browser_screen.dart';
 
+IconData _sourceIcon(MusicSourceType type) {
+  switch (type) {
+    case MusicSourceType.webdav:
+      return Icons.cloud_done_rounded;
+    case MusicSourceType.network:
+      return Icons.language_rounded;
+    case MusicSourceType.smb:
+      return Icons.folder_shared_rounded;
+    default:
+      return Icons.music_note_rounded;
+  }
+}
+
+String _typeName(MusicSourceType type) {
+  switch (type) {
+    case MusicSourceType.webdav:
+      return 'WebDAV';
+    case MusicSourceType.network:
+      return 'HTTP API';
+    case MusicSourceType.smb:
+      return 'SMB';
+    default:
+      return '本地';
+  }
+}
+
 /// 第三方音源管理界面
 class SourcesScreen extends StatefulWidget {
   const SourcesScreen({super.key});
@@ -49,32 +75,6 @@ class _SourcesScreenState extends State<SourcesScreen> {
               },
             ),
     );
-  }
-
-  IconData _sourceIcon(MusicSourceType type) {
-    switch (type) {
-      case MusicSourceType.webdav:
-        return Icons.cloud_done_rounded;
-      case MusicSourceType.network:
-        return Icons.language_rounded;
-      case MusicSourceType.smb:
-        return Icons.folder_shared_rounded;
-      default:
-        return Icons.music_note_rounded;
-    }
-  }
-
-  String _typeName(MusicSourceType type) {
-    switch (type) {
-      case MusicSourceType.webdav:
-        return 'WebDAV';
-      case MusicSourceType.network:
-        return 'HTTP API';
-      case MusicSourceType.smb:
-        return 'SMB';
-      default:
-        return '本地';
-    }
   }
 
   /// 加载音源歌曲列表 / 进入 WebDAV 浏览器
@@ -165,8 +165,10 @@ class _SourcesScreenState extends State<SourcesScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_rounded, color: Colors.red),
-              title: const Text('删除', style: TextStyle(color: Colors.red)),
+              leading:
+                  const Icon(Icons.delete_rounded, color: AppColors.danger),
+              title:
+                  const Text('删除', style: TextStyle(color: AppColors.danger)),
               onTap: () {
                 Navigator.pop(ctx);
                 context.read<MusicProvider>().removeSource(source.id);
@@ -274,32 +276,6 @@ class _SourceCard extends StatelessWidget {
     required this.onLongPress,
   });
 
-  IconData _icon(MusicSourceType type) {
-    switch (type) {
-      case MusicSourceType.webdav:
-        return Icons.cloud_done_rounded;
-      case MusicSourceType.network:
-        return Icons.language_rounded;
-      case MusicSourceType.smb:
-        return Icons.folder_shared_rounded;
-      default:
-        return Icons.music_note_rounded;
-    }
-  }
-
-  String _typeName(MusicSourceType type) {
-    switch (type) {
-      case MusicSourceType.webdav:
-        return 'WebDAV';
-      case MusicSourceType.network:
-        return 'HTTP API';
-      case MusicSourceType.smb:
-        return 'SMB';
-      default:
-        return '本地';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -323,7 +299,7 @@ class _SourceCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   gradient: LinearGradient(colors: palette.gradient),
                 ),
-                child: Icon(_icon(source.type), color: Colors.white, size: 24),
+                child: Icon(_sourceIcon(source.type), color: Colors.white, size: 24),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -380,10 +356,7 @@ class SourceSongsScreen extends StatelessWidget {
         padding: const EdgeInsets.only(top: 4, bottom: 100),
         itemCount: songs.length,
         itemBuilder: (context, index) {
-          return SongTile(
-            song: songs[index],
-            onMore: null,
-          );
+          return SongTile(song: songs[index]);
         },
       ),
       floatingActionButton: FloatingActionButton.extended(

@@ -73,18 +73,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                   return Dismissible(
                     key: ValueKey(song.id),
                     direction: DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 1),
-                      padding: const EdgeInsets.only(right: 20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE5484D),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: const Icon(Icons.delete_rounded,
-                          color: Colors.white),
-                    ),
+                    background: const SwipeDismissBackground(),
                     onDismissed: (_) => provider.removeSongFromPlaylist(
                         livePlaylist.id, song.id),
                     child: SongTile(song: song, index: index),

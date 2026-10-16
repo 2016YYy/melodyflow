@@ -37,7 +37,7 @@ class IntegratedNavBar extends StatelessWidget {
         height: 66,
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1A21) : Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(AppRadius.xl),
           border: Border.all(
             color: scheme.outlineVariant.withValues(alpha: 0.5),

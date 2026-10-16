@@ -147,10 +147,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showPalettePicker(BuildContext context, MusicProvider provider) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -221,10 +217,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showSkinPicker(BuildContext context, MusicProvider provider) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -239,13 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final selected = provider.playerSkin.name == skin.name;
                 return ListTile(
                   leading: Icon(
-                    skin.name == 'classic'
-                        ? Icons.music_note_rounded
-                        : skin.name == 'modern'
-                            ? Icons.album_rounded
-                            : skin.name == 'minimal'
-                                ? Icons.remove_rounded
-                                : Icons.disc_full_rounded,
+                    skin.icon,
                     color: selected ? provider.palette.primary : null,
                   ),
                   title: Text(skin.label,

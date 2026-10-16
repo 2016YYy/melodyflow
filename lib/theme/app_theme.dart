@@ -96,17 +96,33 @@ class ThemePalettes {
       all.firstWhere((p) => p.name == name, orElse: () => purple);
 }
 
+/// 语义化颜色（固定语义色，不随主题色变化）
+class AppColors {
+  static const Color favorite = Color(0xFFFF4E7A);
+  static const Color favoriteAlt = Color(0xFFEC4899);
+  static const Color danger = Color(0xFFE5484D);
+}
+
 /// 播放器皮肤
 class PlayerSkin {
   final String name;
   final String label;
+  final IconData icon;
 
-  const PlayerSkin({required this.name, required this.label});
+  const PlayerSkin({
+    required this.name,
+    required this.label,
+    required this.icon,
+  });
 
-  static const PlayerSkin classic = PlayerSkin(name: 'classic', label: '经典');
-  static const PlayerSkin modern = PlayerSkin(name: 'modern', label: '现代');
-  static const PlayerSkin minimal = PlayerSkin(name: 'minimal', label: '极简');
-  static const PlayerSkin vinyl = PlayerSkin(name: 'vinyl', label: '黑胶');
+  static const PlayerSkin classic = PlayerSkin(
+      name: 'classic', label: '经典', icon: Icons.radio_rounded);
+  static const PlayerSkin modern = PlayerSkin(
+      name: 'modern', label: '现代', icon: Icons.album_rounded);
+  static const PlayerSkin minimal = PlayerSkin(
+      name: 'minimal', label: '极简', icon: Icons.minimize_rounded);
+  static const PlayerSkin vinyl = PlayerSkin(
+      name: 'vinyl', label: '黑胶', icon: Icons.disc_full_rounded);
 
   static const List<PlayerSkin> all = [classic, modern, minimal, vinyl];
 

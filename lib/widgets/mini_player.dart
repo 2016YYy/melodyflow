@@ -31,7 +31,7 @@ class MiniPlayer extends StatelessWidget {
         child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1A1A21) : Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(
               color: scheme.outlineVariant.withValues(alpha: 0.5),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/music_provider.dart';
 import '../screens/playlist_detail_screen.dart';
+import '../theme/app_theme.dart';
 import 'album_art_widget.dart';
 
 /// 歌曲列表项
@@ -30,84 +31,98 @@ class SongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.read<MusicProvider>();
+    final scheme = Theme.of(context).colorScheme;
     final isCurrent = provider.currentSong?.id == song.id;
-    final palette = provider.palette;
 
-    return Material(
-      color: isCurrent
-          ? palette.primary.withValues(alpha:0.08)
-          : Colors.transparent,
-      child: InkWell(
-        onTap: () => provider.playSong(song),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              if (showIndex && index != null)
-                SizedBox(
-                  width: 28,
-                  child: Text(
-                    '${index! + 1}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: isCurrent ? palette.primary : null,
-                      fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Material(
+        color: isCurrent
+            ? scheme.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: () => provider.playSong(song),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(
+              children: [
+                if (showIndex && index != null)
+                  SizedBox(
+                    width: 30,
+                    child: Center(
+                      child: isCurrent && provider.isPlaying
+                          ? _PlayingIndicator(color: scheme.primary)
+                          : Text(
+                              '${index! + 1}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color:
+                                    isCurrent ? scheme.primary : null,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
                     ),
-                  ),
-                )
-              else
-                AlbumArtWidget(song: song, size: 48, borderRadius: 10),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight:
-                            isCurrent ? FontWeight.bold : FontWeight.w500,
-                        color: isCurrent ? palette.primary : null,
+                  )
+                else
+                  AlbumArtWidget(
+                      song: song, size: 48, borderRadius: AppRadius.sm),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight:
+                              isCurrent ? FontWeight.w700 : FontWeight.w500,
+                          color: isCurrent ? scheme.primary : null,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${song.artist} · ${song.album}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-              if (isCurrent && provider.isPlaying)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _PlayingIndicator(color: palette.primary),
-                ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (song.duration.inSeconds > 0)
-                    Text(
-                      _formatDuration(song.duration),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  if (song.sourceType != MusicSourceType.local) ...[
-                    const SizedBox(width: 8),
-                    Icon(_sourceIcon(song.sourceType),
-                        size: 16, color: palette.primary),
-                  ],
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, size: 20),
-                    onPressed: onMore ?? () => _showMoreMenu(context, provider, song),
-                    splashRadius: 18,
+                      const SizedBox(height: 2),
+                      Text(
+                        '${song.artist} · ${song.album}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+                if (isCurrent && provider.isPlaying && showIndex)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _PlayingIndicator(color: scheme.primary),
+                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (song.duration.inSeconds > 0)
+                      Text(
+                        _formatDuration(song.duration),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    if (song.sourceType != MusicSourceType.local) ...[
+                      const SizedBox(width: 8),
+                      Icon(_sourceIcon(song.sourceType),
+                          size: 16, color: scheme.primary),
+                    ],
+                    IconButton(
+                      icon: const Icon(Icons.more_horiz_rounded, size: 20),
+                      color: scheme.onSurfaceVariant,
+                      onPressed: onMore ??
+                          () => _showMoreMenu(context, provider, song),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -130,12 +145,39 @@ class SongTile extends StatelessWidget {
   /// 更多操作菜单
   static void _showMoreMenu(
       BuildContext context, MusicProvider provider, Song song) {
+    final isFav = provider.isFavorite(song);
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Row(
+                children: [
+                  AlbumArtWidget(song: song, size: 44, borderRadius: 12),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 15)),
+                        const SizedBox(height: 2),
+                        Text(song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(ctx).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.playlist_add_rounded),
               title: const Text('添加到歌单'),
@@ -149,12 +191,12 @@ class SongTile extends StatelessWidget {
             ),
             ListTile(
               leading: Icon(
-                provider.isFavorite(song)
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                color: provider.isFavorite(song) ? Colors.red : null,
+                isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: isFav
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              title: Text(provider.isFavorite(song) ? '取消收藏' : '收藏'),
+              title: Text(isFav ? '取消喜欢' : '添加到「我喜爱」'),
               onTap: () {
                 provider.toggleFavorite(song);
                 Navigator.pop(ctx);
@@ -168,6 +210,7 @@ class SongTile extends StatelessWidget {
                 _showSongInfo(context, song);
               },
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),

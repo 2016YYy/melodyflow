@@ -4,6 +4,7 @@ import '../models/playlist.dart';
 import '../models/song.dart';
 import '../providers/music_provider.dart';
 import '../widgets/album_art_widget.dart';
+import '../widgets/collection_header.dart';
 import '../widgets/song_tile.dart';
 
 /// 歌单详情页
@@ -18,105 +19,48 @@ class PlaylistDetailScreen extends StatelessWidget {
       (p) => p.id == playlist.id,
       orElse: () => playlist,
     );
-    final palette = provider.palette;
+    final songs = livePlaylist.songs;
 
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          SliverAppBar(
-            expandedHeight: 240,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              title: Text(
-                livePlaylist.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
-                ),
-              ),
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (livePlaylist.songs.isNotEmpty)
-                    AlbumArtWidget(
-                      song: livePlaylist.songs.first,
-                      size: double.infinity,
-                      borderRadius: 0,
-                      placeholderIcon: Icons.playlist_play_rounded,
-                    )
-                  else
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                            colors: palette.coverPlaceholder),
-                      ),
-                      child: const Icon(Icons.playlist_play_rounded,
-                          size: 80, color: Colors.white70),
-                    ),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha:0.1),
-                          Colors.black.withValues(alpha:0.7),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          CollectionCoverAppBar(
+            title: livePlaylist.name,
+            coverSong: songs.isNotEmpty ? songs.first : null,
+            fallbackIcon: Icons.playlist_play_rounded,
           ),
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(livePlaylist.name,
-                            style:
-                                Theme.of(context).textTheme.headlineMedium),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${livePlaylist.songs.length} 首歌曲',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (livePlaylist.songs.isNotEmpty)
-                    FloatingActionButton.extended(
-                      onPressed: () =>
-                          provider.playPlaylist(livePlaylist.songs),
-                      backgroundColor: palette.primary,
-                      icon: const Icon(Icons.play_arrow_rounded,
-                          color: Colors.white),
-                      label: const Text('播放全部',
-                          style: TextStyle(color: Colors.white)),
-                    ),
-                ],
-              ),
+            child: CollectionInfoBar(
+              subtitle: '${songs.length} 首歌曲',
+              onPlayAll:
+                  songs.isEmpty ? null : () => provider.playPlaylist(songs),
+              onShuffle: songs.isEmpty
+                  ? null
+                  : () => provider.playPlaylist(
+                      List<Song>.from(songs)..shuffle()),
             ),
           ),
           const SliverToBoxAdapter(child: Divider(height: 1)),
-          if (livePlaylist.songs.isEmpty)
+          if (songs.isEmpty)
             SliverFillRemaining(
+              hasScrollBody: false,
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.playlist_add_rounded,
-                        size: 64, color: palette.primary.withValues(alpha:0.5)),
-                    const SizedBox(height: 12),
-                    const Text('歌单还是空的'),
-                    const SizedBox(height: 4),
+                        size: 56,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.5)),
+                    const SizedBox(height: 14),
+                    const Text('歌单还是空的',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
                     Text('在歌曲列表中点击更多按钮添加歌曲',
-                        style: Theme.of(context).textTheme.bodySmall),
+                        style: Theme.of(context).textTheme.bodyMedium),
                   ],
                 ),
               ),
@@ -125,14 +69,19 @@ class PlaylistDetailScreen extends StatelessWidget {
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final song = livePlaylist.songs[index];
+                  final song = songs[index];
                   return Dismissible(
                     key: ValueKey(song.id),
                     direction: DismissDirection.endToStart,
                     background: Container(
                       alignment: Alignment.centerRight,
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 1),
                       padding: const EdgeInsets.only(right: 20),
-                      color: Colors.red,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5484D),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
                       child: const Icon(Icons.delete_rounded,
                           color: Colors.white),
                     ),
@@ -141,7 +90,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                     child: SongTile(song: song, index: index),
                   );
                 },
-                childCount: livePlaylist.songs.length,
+                childCount: songs.length,
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -163,13 +112,12 @@ class PlaylistPickerDialog extends StatelessWidget {
 
     return Dialog(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('添加到歌单',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text('添加到歌单', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             if (playlists.isEmpty)
               const Padding(
@@ -183,23 +131,21 @@ class PlaylistPickerDialog extends StatelessWidget {
                   itemCount: playlists.length,
                   itemBuilder: (context, index) {
                     final pl = playlists[index];
-                    final contains =
-                        pl.songs.any((s) => s.id == song.id);
+                    final contains = pl.songs.any((s) => s.id == song.id);
                     return ListTile(
                       leading: pl.songs.isNotEmpty
                           ? AlbumArtWidget(
                               song: pl.songs.first,
                               size: 44,
-                              borderRadius: 8,
-                              placeholderIcon:
-                                  Icons.playlist_play_rounded,
+                              borderRadius: 12,
+                              placeholderIcon: Icons.playlist_play_rounded,
                             )
                           : const Icon(Icons.playlist_play_rounded),
                       title: Text(pl.name),
                       subtitle: Text('${pl.songs.length} 首'),
                       trailing: contains
-                          ? const Icon(Icons.check_rounded,
-                              color: Colors.green)
+                          ? Icon(Icons.check_rounded,
+                              color: provider.palette.primary)
                           : null,
                       onTap: () {
                         if (!contains) {

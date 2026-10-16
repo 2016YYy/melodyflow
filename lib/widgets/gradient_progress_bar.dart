@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
 
 /// 精美渐变进度条 - 带圆角轨道、渐变进度、光晕滑块
 class GradientProgressBar extends StatefulWidget {
@@ -30,11 +29,10 @@ class _GradientProgressBarState extends State<GradientProgressBar> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).brightness == Brightness.dark
-        ? ThemePalettes.purple
-        : ThemePalettes.purple;
-    // 实际从 provider 取色
-    final colors = widget.gradientColors ?? palette.gradient;
+    final scheme = Theme.of(context).colorScheme;
+    // 未显式传入时使用主题主色
+    final colors = widget.gradientColors ?? [scheme.primary, scheme.primary];
+    final trackColor = scheme.outlineVariant.withValues(alpha: 0.5);
     final displayValue = _dragging
         ? _dragValue
         : widget.value.clamp(0.0, 1.0);
@@ -79,9 +77,7 @@ class _GradientProgressBarState extends State<GradientProgressBar> {
                   height: widget.height,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(widget.height),
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white12
-                        : Colors.black12,
+                    color: trackColor,
                   ),
                 ),
                 // 渐变进度

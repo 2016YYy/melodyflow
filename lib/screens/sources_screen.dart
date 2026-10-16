@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/music_source.dart';
 import '../models/song.dart';
 import '../providers/music_provider.dart';
+import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
 import 'webdav_browser_screen.dart';
 
@@ -23,7 +24,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
         title: const Text('音乐源'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add_rounded),
             tooltip: '添加音源',
             onPressed: () => _showAddSourceDialog(context),
           ),
@@ -32,37 +33,17 @@ class _SourcesScreenState extends State<SourcesScreen> {
       body: provider.sources.isEmpty
           ? _EmptySources(onAdd: () => _showAddSourceDialog(context))
           : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               itemCount: provider.sources.length,
               itemBuilder: (context, index) {
                 final source = provider.sources[index];
-                final palette = provider.palette;
-                return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: ListTile(
-                    leading: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: LinearGradient(colors: palette.gradient),
-                      ),
-                      child: Icon(_sourceIcon(source.type),
-                          color: Colors.white),
-                    ),
-                    title: Text(source.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(
-                      '${_typeName(source.type)} · ${source.url}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: source.enabled
-                        ? const Icon(Icons.check_circle,
-                            color: Colors.green, size: 20)
-                        : const Icon(Icons.cancel, color: Colors.grey),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _SourceCard(
+                    source: source,
                     onTap: () => _loadSourceSongs(context, source),
-                    onLongPress: () => _showSourceOptions(context, source),
+                    onLongPress: () =>
+                        _showSourceOptions(context, source),
                   ),
                 );
               },
@@ -73,13 +54,13 @@ class _SourcesScreenState extends State<SourcesScreen> {
   IconData _sourceIcon(MusicSourceType type) {
     switch (type) {
       case MusicSourceType.webdav:
-        return Icons.cloud_done;
+        return Icons.cloud_done_rounded;
       case MusicSourceType.network:
-        return Icons.language;
+        return Icons.language_rounded;
       case MusicSourceType.smb:
-        return Icons.folder_shared;
+        return Icons.folder_shared_rounded;
       default:
-        return Icons.music_note;
+        return Icons.music_note_rounded;
     }
   }
 
@@ -147,14 +128,36 @@ class _SourcesScreenState extends State<SourcesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Row(
+                children: [
+                  Icon(_sourceIcon(source.type),
+                      color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(source.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 15)),
+                        Text(_typeName(source.type),
+                            style: Theme.of(ctx).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
             ListTile(
-              leading: const Icon(Icons.link),
+              leading: const Icon(Icons.link_rounded),
               title: const Text('测试连接'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final ok = await context
-                    .read<MusicProvider>()
-                    .testSource(source);
+                final ok =
+                    await context.read<MusicProvider>().testSource(source);
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(ok ? '连接成功' : '连接失败')),
@@ -162,13 +165,14 @@ class _SourcesScreenState extends State<SourcesScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
+              leading: const Icon(Icons.delete_rounded, color: Colors.red),
               title: const Text('删除', style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(ctx);
                 context.read<MusicProvider>().removeSource(source.id);
               },
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -200,10 +204,12 @@ class _SourcesScreenState extends State<SourcesScreen> {
                       .toList(),
                   onChanged: (v) => setDialogState(() => type = v!),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(labelText: '名称'),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: urlCtrl,
                   decoration: const InputDecoration(
@@ -211,10 +217,12 @@ class _SourcesScreenState extends State<SourcesScreen> {
                     hintText: 'https://example.com/dav',
                   ),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: userCtrl,
                   decoration: const InputDecoration(labelText: '用户名（可选）'),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: passCtrl,
                   obscureText: true,
@@ -254,6 +262,108 @@ class _SourcesScreenState extends State<SourcesScreen> {
   }
 }
 
+/// 音源卡片
+class _SourceCard extends StatelessWidget {
+  final MusicSource source;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _SourceCard({
+    required this.source,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  IconData _icon(MusicSourceType type) {
+    switch (type) {
+      case MusicSourceType.webdav:
+        return Icons.cloud_done_rounded;
+      case MusicSourceType.network:
+        return Icons.language_rounded;
+      case MusicSourceType.smb:
+        return Icons.folder_shared_rounded;
+      default:
+        return Icons.music_note_rounded;
+    }
+  }
+
+  String _typeName(MusicSourceType type) {
+    switch (type) {
+      case MusicSourceType.webdav:
+        return 'WebDAV';
+      case MusicSourceType.network:
+        return 'HTTP API';
+      case MusicSourceType.smb:
+        return 'SMB';
+      default:
+        return '本地';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final palette = context.read<MusicProvider>().palette;
+
+    return Material(
+      color: Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  gradient: LinearGradient(colors: palette.gradient),
+                ),
+                child: Icon(_icon(source.type), color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      source.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_typeName(source.type)} · ${source.url}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: source.enabled ? scheme.primary : scheme.outlineVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 音源歌曲列表
 class SourceSongsScreen extends StatelessWidget {
   final MusicSource source;
@@ -267,6 +377,7 @@ class SourceSongsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(source.name)),
       body: ListView.builder(
+        padding: const EdgeInsets.only(top: 4, bottom: 100),
         itemCount: songs.length,
         itemBuilder: (context, index) {
           return SongTile(
@@ -277,7 +388,7 @@ class SourceSongsScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => provider.playPlaylist(songs),
-        icon: const Icon(Icons.play_arrow),
+        icon: const Icon(Icons.play_arrow_rounded),
         label: const Text('播放全部'),
       ),
     );
@@ -296,21 +407,23 @@ class _EmptySources extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 100,
-            height: 100,
+            width: 104,
+            height: 104,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(colors: palette.gradient),
             ),
-            child: const Icon(Icons.cloud_rounded, size: 50, color: Colors.white),
+            child:
+                const Icon(Icons.cloud_rounded, size: 50, color: Colors.white),
           ),
-          const SizedBox(height: 20),
-          const Text('还没有添加第三方音源'),
+          const SizedBox(height: 22),
+          const Text('还没有添加第三方音源',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          const Text('支持 WebDAV、HTTP API、SMB 等',
-              style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
+          Text('支持 WebDAV、HTTP API、SMB 等',
+              style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 22),
+          FilledButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add_rounded),
             label: const Text('添加音源'),

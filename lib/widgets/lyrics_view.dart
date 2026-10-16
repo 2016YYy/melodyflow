@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/lyric.dart';
 
-/// 歌词滚动视图
+/// 歌词滚动视图 - 当前行高亮并自动居中，点击可跳转
 class LyricsView extends StatefulWidget {
   final List<LyricLine> lyrics;
   final Duration currentPosition;
@@ -39,54 +39,65 @@ class _LyricsViewState extends State<LyricsView> {
     }
     if (newIndex != _currentIndex) {
       setState(() => _currentIndex = newIndex);
-      _scrollToCurrent(newIndex);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent(newIndex));
     }
   }
 
   void _scrollToCurrent(int index) {
-    if (index < 0) return;
-    // 每行行高约 48，居中显示
-    final offset = index * 48.0 - 150;
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        offset.clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-      );
-    }
+    if (index < 0 || !_scrollController.hasClients) return;
+    // 每行行高约 52，居中显示
+    final viewport = _scrollController.position.viewportDimension;
+    final offset = index * 52.0 - viewport / 2 + 26;
+    _scrollController.animateTo(
+      offset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     if (widget.lyrics.isEmpty) {
-      return const Center(
-        child: Text(
-          '暂无歌词',
-          style: TextStyle(color: Colors.white38, fontSize: 16),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lyrics_outlined,
+                size: 46, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 14),
+            Text(
+              '暂无歌词',
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 15),
+            ),
+          ],
         ),
       );
     }
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 160),
+      padding: const EdgeInsets.symmetric(vertical: 140),
       itemCount: widget.lyrics.length,
       itemBuilder: (context, index) {
         final line = widget.lyrics[index];
         final isActive = index == _currentIndex;
         return GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => widget.onSeek?.call(line.time),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-            child: Text(
-              line.text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: isActive ? 20 : 16,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                color: isActive ? Colors.white : Colors.white38,
-                height: 1.5,
-              ),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOut,
+            style: TextStyle(
+              fontSize: isActive ? 20 : 16,
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+              height: 1.5,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+              child: Text(line.text, textAlign: TextAlign.center),
             ),
           ),
         );

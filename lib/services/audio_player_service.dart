@@ -82,12 +82,16 @@ class AudioPlayerService {
     _currentSong = _playlist[_currentIndex];
     _songController.add(_currentSong);
 
-    final media = Media(
-      _currentSong!.uri,
-      httpHeaders: _currentSong!.sourceType == MusicSourceType.network
-          ? {'User-Agent': 'MelodyFlow'}
-          : null,
-    );
+    // 构建请求头：WebDAV / 网络音源需要认证
+    Map<String, String>? headers;
+    if (_currentSong!.httpHeaders != null &&
+        _currentSong!.httpHeaders!.isNotEmpty) {
+      headers = _currentSong!.httpHeaders;
+    } else if (_currentSong!.sourceType == MusicSourceType.network) {
+      headers = {'User-Agent': 'MelodyFlow'};
+    }
+
+    final media = Media(_currentSong!.uri, httpHeaders: headers);
     await _player.open(media, play: true);
     _emitState();
   }

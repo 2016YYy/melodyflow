@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import '../models/music_source.dart';
 import '../models/song.dart';
 import '../providers/music_provider.dart';
-import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
+import 'webdav_browser_screen.dart';
 
 /// 第三方音源管理界面
 class SourcesScreen extends StatefulWidget {
@@ -35,6 +35,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
               itemCount: provider.sources.length,
               itemBuilder: (context, index) {
                 final source = provider.sources[index];
+                final palette = provider.palette;
                 return Card(
                   margin:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -44,7 +45,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                       height: 48,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        gradient: AppTheme.gradient,
+                        gradient: LinearGradient(colors: palette.gradient),
                       ),
                       child: Icon(_sourceIcon(source.type),
                           color: Colors.white),
@@ -95,9 +96,20 @@ class _SourcesScreenState extends State<SourcesScreen> {
     }
   }
 
-  /// 加载音源歌曲列表
+  /// 加载音源歌曲列表 / 进入 WebDAV 浏览器
   Future<void> _loadSourceSongs(
       BuildContext context, MusicSource source) async {
+    // WebDAV 源进入文件夹浏览器
+    if (source.type == MusicSourceType.webdav) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WebdavBrowserScreen(source: source),
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -105,7 +117,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
     );
     try {
       final songs = await context.read<MusicProvider>().loadSourceSongs(source);
-      if (!mounted) return;
+      if (!context.mounted) return;
       Navigator.pop(context);
       if (songs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -120,7 +132,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('加载失败: $e')),
@@ -180,7 +192,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<MusicSourceType>(
-                  value: type,
+                  initialValue: type,
                   decoration: const InputDecoration(labelText: '类型'),
                   items: MusicSourceType.values
                       .map((t) => DropdownMenuItem(
@@ -278,6 +290,7 @@ class _EmptySources extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.read<MusicProvider>().palette;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -287,9 +300,9 @@ class _EmptySources extends StatelessWidget {
             height: 100,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: AppTheme.gradient,
+              gradient: LinearGradient(colors: palette.gradient),
             ),
-            child: const Icon(Icons.cloud, size: 50, color: Colors.white),
+            child: const Icon(Icons.cloud_rounded, size: 50, color: Colors.white),
           ),
           const SizedBox(height: 20),
           const Text('还没有添加第三方音源'),
@@ -299,7 +312,7 @@ class _EmptySources extends StatelessWidget {
           const SizedBox(height: 20),
           ElevatedButton.icon(
             onPressed: onAdd,
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add_rounded),
             label: const Text('添加音源'),
           ),
         ],

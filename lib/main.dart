@@ -6,7 +6,6 @@ import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
-  // 初始化 media_kit
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   runApp(const MelodyFlowApp());
@@ -24,11 +23,9 @@ class MelodyFlowApp extends StatelessWidget {
           return MaterialApp(
             title: 'MelodyFlow',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: provider.storage.isDarkMode()
-                ? ThemeMode.dark
-                : ThemeMode.light,
+            theme: AppTheme.buildTheme(provider.palette, false),
+            darkTheme: AppTheme.buildTheme(provider.palette, true),
+            themeMode: provider.darkMode ? ThemeMode.dark : ThemeMode.light,
             home: const HomeScreen(),
           );
         },

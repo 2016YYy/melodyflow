@@ -63,5 +63,6 @@ android/local.properties
 *.ipa
 *.exe
 *.zip
+*.sha256
 melodyflow-v*-*.apk
 android/build/

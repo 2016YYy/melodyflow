@@ -1,15 +1,18 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../models/lyric.dart';
 import '../models/music_source.dart';
+import '../models/playlist.dart';
 import '../models/song.dart';
+import '../models/webdav_item.dart';
 import '../services/album_art_service.dart';
-import '../services/audio_player_service.dart' show AudioPlayerService, PlaybackState, PlaylistMode;
+import '../services/audio_player_service.dart'
+    show AudioPlayerService, PlaybackState, PlaylistMode;
 import '../services/lyrics_service.dart';
 import '../services/music_scanner_service.dart';
 import '../services/remote_source_service.dart';
 import '../services/storage_service.dart';
+import '../theme/app_theme.dart';
 
 /// 全局音乐状态提供者
 class MusicProvider extends ChangeNotifier {
@@ -23,14 +26,20 @@ class MusicProvider extends ChangeNotifier {
   List<Song> _songs = [];
   List<Song> _filteredSongs = [];
   List<MusicSource> _sources = [];
+  List<Playlist> _playlists = [];
   List<LyricLine> _currentLyrics = [];
-  Map<String, Uint8List> _artworkCache = {};
-  Map<String, String> _onlineArtCache = {};
-  bool _isLoading = false;
+  final Map<String, Uint8List> _artworkCache = {};
+  final Map<String, String> _onlineArtCache = {};
+  final bool _isLoading = false;
   bool _isScanning = false;
   String _searchQuery = '';
   PlaybackState? _playbackState;
   Duration _position = Duration.zero;
+
+  // 主题状态
+  bool _darkMode = true;
+  String _paletteName = 'purple';
+  String _playerSkinName = 'modern';
 
   // 流订阅
   StreamSubscription? _stateSub;
@@ -44,6 +53,10 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _init() async {
     await _storage.init();
     _sources = _storage.getSources();
+    _playlists = _storage.getPlaylists();
+    _darkMode = _storage.isDarkMode();
+    _paletteName = _storage.getPalette();
+    _playerSkinName = _storage.getPlayerSkin();
 
     // 订阅播放服务
     _stateSub = _player.playbackStateStream.listen((state) {
@@ -62,6 +75,29 @@ class MusicProvider extends ChangeNotifier {
       notifyListeners();
     });
 
+    notifyListeners();
+  }
+
+  // === 主题 ===
+  ThemePalette get palette => ThemePalettes.fromName(_paletteName);
+  PlayerSkin get playerSkin => PlayerSkin.fromName(_playerSkinName);
+  bool get darkMode => _darkMode;
+
+  Future<void> setDarkMode(bool v) async {
+    _darkMode = v;
+    await _storage.setDarkMode(v);
+    notifyListeners();
+  }
+
+  Future<void> setPalette(String name) async {
+    _paletteName = name;
+    await _storage.setPalette(name);
+    notifyListeners();
+  }
+
+  Future<void> setPlayerSkin(String name) async {
+    _playerSkinName = name;
+    await _storage.setPlayerSkin(name);
     notifyListeners();
   }
 
@@ -141,6 +177,10 @@ class MusicProvider extends ChangeNotifier {
     return await _remoteService.fetchSongs(source);
   }
 
+  Future<List<WebdavItem>> listWebdavFolder(
+          MusicSource source, String path) async =>
+      _remoteService.listWebdavFolder(source, path);
+
   Future<bool> testSource(MusicSource source) =>
       _remoteService.testConnection(source);
 
@@ -154,6 +194,79 @@ class MusicProvider extends ChangeNotifier {
     await _storage.removeSource(id);
     _sources = _storage.getSources();
     notifyListeners();
+  }
+
+  // === 歌单 ===
+  List<Playlist> get playlists => _playlists;
+
+  Future<void> createPlaylist(String name, {String? description}) async {
+    final list = Playlist(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: name,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      description: description,
+    );
+    _playlists.add(list);
+    await _storage.savePlaylists(_playlists);
+    notifyListeners();
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    _playlists.removeWhere((p) => p.id == id);
+    await _storage.savePlaylists(_playlists);
+    notifyListeners();
+  }
+
+  Future<void> renamePlaylist(String id, String name) async {
+    final idx = _playlists.indexWhere((p) => p.id == id);
+    if (idx >= 0) {
+      _playlists[idx] = _playlists[idx].copyWith(name: name);
+      await _storage.savePlaylists(_playlists);
+      notifyListeners();
+    }
+  }
+
+  Future<void> addSongToPlaylist(String playlistId, Song song) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx >= 0) {
+      final list = _playlists[idx];
+      if (!list.songs.any((s) => s.id == song.id)) {
+        _playlists[idx] = list.copyWith(songs: [...list.songs, song]);
+        await _storage.savePlaylists(_playlists);
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx >= 0) {
+      final list = _playlists[idx];
+      _playlists[idx] =
+          list.copyWith(songs: list.songs.where((s) => s.id != songId).toList());
+      await _storage.savePlaylists(_playlists);
+      notifyListeners();
+    }
+  }
+
+  // === 专辑 / 艺术家 分组 ===
+  Map<String, List<Song>> get albums {
+    final map = <String, List<Song>>{};
+    for (final s in _songs) {
+      final key = s.album.isEmpty ? '未知专辑' : s.album;
+      map.putIfAbsent(key, () => []).add(s);
+    }
+    return map;
+  }
+
+  Map<String, List<Song>> get artists {
+    final map = <String, List<Song>>{};
+    for (final s in _songs) {
+      final key = s.artist.isEmpty ? '未知艺术家' : s.artist;
+      map.putIfAbsent(key, () => []).add(s);
+    }
+    return map;
   }
 
   // === 收藏 ===

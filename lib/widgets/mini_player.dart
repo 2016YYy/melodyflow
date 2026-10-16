@@ -1,9 +1,7 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/song.dart';
 import '../providers/music_provider.dart';
-import '../theme/app_theme.dart';
+import 'album_art_widget.dart';
 
 /// 底部迷你播放器
 class MiniPlayer extends StatelessWidget {
@@ -14,29 +12,30 @@ class MiniPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<MusicProvider>();
     final song = provider.currentSong;
+    final palette = provider.palette;
 
     if (song == null) return const SizedBox.shrink();
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.all(8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 10,
+              color: Colors.black.withValues(alpha:0.2),
+              blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Row(
           children: [
-            _MiniArtwork(song: song),
-            const SizedBox(width: 12),
+            AlbumArtWidget(song: song, size: 44, borderRadius: 10),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -47,7 +46,7 @@ class MiniPlayer extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 14),
+                        fontWeight: FontWeight.w600, fontSize: 13),
                   ),
                   Text(
                     song.artist,
@@ -60,47 +59,18 @@ class MiniPlayer extends StatelessWidget {
             ),
             IconButton(
               icon: Icon(
-                provider.isPlaying ? Icons.pause : Icons.play_arrow,
-                color: AppTheme.primary,
+                provider.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: palette.primary,
               ),
               onPressed: () => provider.playPause(),
+              splashRadius: 18,
             ),
             IconButton(
-              icon: const Icon(Icons.skip_next, color: AppTheme.primary),
+              icon: Icon(Icons.skip_next_rounded, color: palette.primary),
               onPressed: () => provider.next(),
+              splashRadius: 18,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MiniArtwork extends StatelessWidget {
-  final Song song;
-  const _MiniArtwork({required this.song});
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = context.watch<MusicProvider>();
-    return SizedBox(
-      width: 44,
-      height: 44,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: FutureBuilder<Uint8List?>(
-          future: provider.getArtwork(song),
-          builder: (context, snapshot) {
-            if (snapshot.hasData && snapshot.data != null) {
-              return Image.memory(snapshot.data!, fit: BoxFit.cover);
-            }
-            return Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: AppTheme.coverPlaceholder),
-              ),
-              child: const Icon(Icons.music_note, color: Colors.white, size: 22),
-            );
-          },
         ),
       ),
     );

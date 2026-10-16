@@ -72,13 +72,6 @@ class UpdateService {
   static const String _githubRepo = '2016YYy/melodyflow';
   static const String _apiBase = 'https://api.github.com/repos/$_githubRepo';
 
-  /// 统一签名公钥（用于校验更新包签名，后续升级用统一签名）
-  static const String _signingPublicKey =
-      '-----BEGIN PUBLIC KEY-----\n'
-      'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMelodyFLOWSIGNATUREKEYFOR\n'
-      'MelodyFlowInAppUpdateVerification2025PlaceholderValue========\n'
-      '-----END PUBLIC KEY-----';
-
   /// 获取当前版本
   Future<String> getCurrentVersion() async {
     final info = await PackageInfo.fromPlatform();

@@ -70,6 +70,49 @@ class AudioPlayerService {
     ));
   }
 
+  /// 跳转到队列中的指定位置播放
+  Future<void> playAt(int index) async {
+    if (index < 0 || index >= _playlist.length) return;
+    _currentIndex = index;
+    await _playCurrent();
+  }
+
+  /// 从队列移除指定位置的歌曲；若移除的是当前歌曲则自动播放下一首
+  Future<void> removeAt(int index) async {
+    if (index < 0 || index >= _playlist.length) return;
+    if (_playlist.length == 1) {
+      // 队列仅剩一首歌：停止并清空
+      await _player.stop();
+      _playlist = [];
+      _currentIndex = -1;
+      _currentSong = null;
+      _songController.add(null);
+      _emitState();
+      return;
+    }
+    _playlist.removeAt(index);
+    if (index < _currentIndex) {
+      _currentIndex--;
+      _emitState();
+    } else if (index == _currentIndex) {
+      // 移除当前播放歌曲：播放原位置的下一首（末尾则回绕）
+      _currentIndex = _currentIndex % _playlist.length;
+      await _playCurrent();
+    } else {
+      _emitState();
+    }
+  }
+
+  /// 清空队列并停止播放
+  Future<void> clearQueue() async {
+    await _player.stop();
+    _playlist = [];
+    _currentIndex = -1;
+    _currentSong = null;
+    _songController.add(null);
+    _emitState();
+  }
+
   /// 播放歌单
   Future<void> playPlaylist(List<Song> playlist, {int startIndex = 0}) async {
     _playlist = List.from(playlist);

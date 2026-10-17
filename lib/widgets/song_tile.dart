@@ -12,6 +12,7 @@ class SongTile extends StatelessWidget {
   final int? index;
   final VoidCallback? onMore;
   final bool showIndex;
+  final List<Song>? queue;
 
   const SongTile({
     super.key,
@@ -19,6 +20,7 @@ class SongTile extends StatelessWidget {
     this.index,
     this.onMore,
     this.showIndex = false,
+    this.queue,
   });
 
   String _formatDuration(Duration d) {
@@ -43,7 +45,7 @@ class SongTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          onTap: () => provider.playSong(song),
+          onTap: () => provider.playSong(song, playlist: queue),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(

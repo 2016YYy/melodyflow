@@ -25,6 +25,13 @@ class MusicProvider extends ChangeNotifier {
 
   List<Song> _songs = [];
   List<Song> _filteredSongs = [];
+  List<Song> _recentSongs = [];
+  SongSortMode _sortMode = SongSortMode.title;
+
+  // 睡眠定时器
+  Timer? _sleepTimer;
+  DateTime? _sleepTimerEndAt;
+  bool _sleepStopAfterCurrent = false;
   List<MusicSource> _sources = [];
   List<Playlist> _playlists = [];
   List<Song> _favoriteSongs = [];
@@ -57,6 +64,7 @@ class MusicProvider extends ChangeNotifier {
     _sources = _storage.getSources();
     _playlists = _storage.getPlaylists();
     _favoriteSongs = _storage.getFavoriteSongs();
+    _recentSongs = _storage.getRecentSongs();
     _darkMode = _storage.isDarkMode();
     _paletteName = _storage.getPalette();
     _playerSkinName = _storage.getPlayerSkin();
@@ -75,6 +83,12 @@ class MusicProvider extends ChangeNotifier {
       if (song != null) {
         _loadLyrics(song);
         _storage.saveLastPlaying(song, _position);
+        _recordRecent(song);
+        // 「播完当前歌曲停止」模式下，切歌意味着上一首已播完
+        if (_sleepStopAfterCurrent && _sleepTimer == null) {
+          _sleepStopAfterCurrent = false;
+          _player.pause();
+        }
       }
       notifyListeners();
     });
@@ -155,6 +169,82 @@ class MusicProvider extends ChangeNotifier {
     final s = _player.toggleShuffle();
     notifyListeners();
     return s;
+  }
+
+  // === 播放队列 ===
+  List<Song> get queue => _player.playlist;
+  int get queueIndex => _player.currentIndex;
+
+  Future<void> playQueueAt(int index) => _player.playAt(index);
+
+  Future<void> removeFromQueue(int index) async {
+    await _player.removeAt(index);
+    notifyListeners();
+  }
+
+  Future<void> clearQueue() async {
+    await _player.clearQueue();
+    notifyListeners();
+  }
+
+  // === 倍速播放 ===
+  double get playbackRate => _playbackState?.rate ?? 1.0;
+
+  Future<void> setPlaybackRate(double rate) async {
+    await _player.setRate(rate);
+  }
+
+  // === 睡眠定时器 ===
+  /// 剩余时间（null 表示未开启）
+  Duration? get sleepTimerRemaining {
+    if (_sleepTimerEndAt == null) return null;
+    final remain = _sleepTimerEndAt!.difference(DateTime.now());
+    return remain.isNegative ? Duration.zero : remain;
+  }
+
+  bool get sleepTimerActive =>
+      _sleepTimer != null || _sleepStopAfterCurrent;
+  bool get sleepStopAfterCurrent => _sleepStopAfterCurrent;
+
+  /// 设置睡眠定时：duration 为 null 表示「播完当前歌曲」
+  void setSleepTimer(Duration? duration, {bool stopAfterCurrent = false}) {
+    cancelSleepTimer(notify: false);
+    if (stopAfterCurrent) {
+      _sleepStopAfterCurrent = true;
+    } else if (duration != null) {
+      _sleepTimerEndAt = DateTime.now().add(duration);
+      _sleepTimer = Timer(duration, () {
+        _player.pause();
+        cancelSleepTimer(notify: false);
+      });
+    }
+    notifyListeners();
+  }
+
+  void cancelSleepTimer({bool notify = true}) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerEndAt = null;
+    _sleepStopAfterCurrent = false;
+    if (notify) notifyListeners();
+  }
+
+  // === 最近播放 ===
+  List<Song> get recentSongs => List.unmodifiable(_recentSongs);
+
+  Future<void> _recordRecent(Song song) async {
+    _recentSongs.removeWhere((s) => s.id == song.id);
+    _recentSongs.insert(0, song);
+    if (_recentSongs.length > StorageService.recentLimit) {
+      _recentSongs = _recentSongs.sublist(0, StorageService.recentLimit);
+    }
+    await _storage.saveRecentSongs(_recentSongs);
+  }
+
+  Future<void> clearRecentSongs() async {
+    _recentSongs = [];
+    await _storage.saveRecentSongs(_recentSongs);
+    notifyListeners();
   }
 
   // === 封面 ===
@@ -310,18 +400,47 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _applyFilter() {
+    List<Song> list;
     if (_searchQuery.isEmpty) {
-      _filteredSongs = List.from(_songs);
+      list = List.from(_songs);
     } else {
       final q = _searchQuery.toLowerCase();
-      _filteredSongs = _songs
+      list = _songs
           .where((s) =>
               s.title.toLowerCase().contains(q) ||
               s.artist.toLowerCase().contains(q) ||
               s.album.toLowerCase().contains(q))
           .toList();
     }
+    switch (_sortMode) {
+      case SongSortMode.title:
+        list.sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      case SongSortMode.artist:
+        list.sort((a, b) {
+          final c = a.artist.toLowerCase().compareTo(b.artist.toLowerCase());
+          return c != 0
+              ? c
+              : a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        });
+        break;
+      case SongSortMode.duration:
+        list.sort((a, b) => b.duration.compareTo(a.duration));
+        break;
+      case SongSortMode.recentAdded:
+        // 保持扫描原始顺序（一般为系统媒体库倒序）
+        break;
+    }
+    _filteredSongs = list;
     notifyListeners();
+  }
+
+  SongSortMode get sortMode => _sortMode;
+
+  void setSortMode(SongSortMode mode) {
+    _sortMode = mode;
+    _applyFilter();
   }
 
   // === Getters ===
@@ -345,7 +464,16 @@ class MusicProvider extends ChangeNotifier {
     _stateSub?.cancel();
     _posSub?.cancel();
     _songSub?.cancel();
+    _sleepTimer?.cancel();
     _player.dispose();
     super.dispose();
   }
+}
+
+/// 歌曲排序方式
+enum SongSortMode {
+  title, // 按标题
+  artist, // 按艺术家
+  duration, // 按时长（长→短）
+  recentAdded, // 默认（扫描顺序）
 }

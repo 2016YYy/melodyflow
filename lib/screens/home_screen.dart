@@ -12,6 +12,7 @@ import 'favorites_screen.dart';
 import 'group_songs_screen.dart';
 import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
+import 'recent_screen.dart';
 import 'settings_screen.dart';
 import 'sources_screen.dart';
 
@@ -137,7 +138,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(110),
+          preferredSize: const Size.fromHeight(196),
           child: Column(
             children: [
               // 搜索框
@@ -159,23 +160,84 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
                   ),
                 ),
               ),
-              // 分类标签
-              TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                labelColor: palette.primary,
-                unselectedLabelColor:
-                    Theme.of(context).textTheme.bodySmall?.color,
-                indicatorColor: palette.primary,
-                indicatorWeight: 3,
-                indicatorSize: TabBarIndicatorSize.label,
-                labelStyle:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                tabs: const [
-                  Tab(text: '歌曲'),
-                  Tab(text: '专辑'),
-                  Tab(text: '艺术家'),
-                  Tab(text: '歌单'),
+              // 快捷功能区
+              SizedBox(
+                height: 86,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  children: [
+                    _QuickAction(
+                      icon: Icons.play_circle_fill_rounded,
+                      label: '播放全部',
+                      onTap: provider.allSongs.isEmpty
+                          ? null
+                          : () => provider.playPlaylist(provider.allSongs),
+                    ),
+                    _QuickAction(
+                      icon: Icons.shuffle_rounded,
+                      label: '随机播放',
+                      onTap: provider.allSongs.isEmpty
+                          ? null
+                          : () {
+                              if (!provider.shuffle) provider.toggleShuffle();
+                              final list = [...provider.allSongs]..shuffle();
+                              provider.playPlaylist(list);
+                            },
+                    ),
+                    _QuickAction(
+                      icon: Icons.history_rounded,
+                      label: '最近播放',
+                      badge: provider.recentSongs.isEmpty
+                          ? null
+                          : '${provider.recentSongs.length}',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const RecentScreen()),
+                      ),
+                    ),
+                    _QuickAction(
+                      icon: Icons.favorite_rounded,
+                      label: '我喜爱',
+                      badge: provider.favoriteSongs.isEmpty
+                          ? null
+                          : '${provider.favoriteSongs.length}',
+                      iconColor: AppColors.favorite,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const FavoritesScreen()),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 分类标签 + 排序
+              Row(
+                children: [
+                  Expanded(
+                    child: TabBar(
+                      controller: _tabController,
+                      isScrollable: true,
+                      labelColor: palette.primary,
+                      unselectedLabelColor:
+                          Theme.of(context).textTheme.bodySmall?.color,
+                      indicatorColor: palette.primary,
+                      indicatorWeight: 3,
+                      indicatorSize: TabBarIndicatorSize.label,
+                      labelStyle: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600),
+                      tabs: const [
+                        Tab(text: '歌曲'),
+                        Tab(text: '专辑'),
+                        Tab(text: '艺术家'),
+                        Tab(text: '歌单'),
+                      ],
+                    ),
+                  ),
+                  _SortMenu(provider: provider),
                 ],
               ),
             ],
@@ -575,6 +637,113 @@ class _PlaylistTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 首页快捷功能按钮
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? badge;
+  final Color? iconColor;
+  final VoidCallback? onTap;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    this.badge,
+    this.iconColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.read<MusicProvider>().palette;
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onTap != null;
+    final color = enabled ? (iconColor ?? palette.primary) : scheme.outlineVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Material(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: onTap,
+          child: Container(
+            width: 108,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.5)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 22, color: color),
+                    const Spacer(),
+                    if (badge != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                        ),
+                        child: Text(
+                          badge!,
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: color,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: enabled ? scheme.onSurface : scheme.outlineVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 歌曲排序菜单
+class _SortMenu extends StatelessWidget {
+  final MusicProvider provider;
+  const _SortMenu({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return PopupMenuButton<SongSortMode>(
+      icon: Icon(Icons.sort_rounded, color: scheme.onSurfaceVariant),
+      tooltip: '排序',
+      initialValue: provider.sortMode,
+      onSelected: provider.setSortMode,
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+            value: SongSortMode.recentAdded, child: Text('默认排序')),
+        PopupMenuItem(value: SongSortMode.title, child: Text('按标题')),
+        PopupMenuItem(value: SongSortMode.artist, child: Text('按艺术家')),
+        PopupMenuItem(
+            value: SongSortMode.duration, child: Text('按时长（长→短）')),
+      ],
     );
   }
 }

@@ -35,6 +35,25 @@ jobs:
           BG="$FLUTTER_DIR/packages/flutter_tools/gradle/build.gradle.kts"
           echo "Patching $BG"
           sed -i '/kotlin-dsl/d; s/kotlin("jvm") version "2.2.20"/kotlin("jvm") version "2.1.20"/' "$BG"
+          SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle.kts"
+          cat > "$SG" <<'EOF'
+          pluginManagement {
+              repositories {
+                  gradlePluginPortal()
+                  google()
+                  mavenCentral()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+          echo "settings.gradle.kts patched:"
+          cat "$SG"
           grep -n 'kotlin-dsl' "$BG" || echo "kotlin-dsl line removed OK"
 
       - name: Diagnose gradle kotlin-dsl resolution

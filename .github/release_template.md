@@ -1,33 +1,18 @@
-## 🎵 MelodyFlow 版本更新说明
+# MelodyFlow {{version}}
 
-感谢使用 MelodyFlow！本次更新带来以下内容：
+## 本次更新
 
-### ✨ 新功能
-- （在此填写本次新增功能）
+- 📱 **后台播放正式落地**：基于 audio_service + audio_session，把播放状态同步到系统通知栏、锁屏媒体控制中心与耳机 / 蓝牙线控，支持播放、暂停、上下首、拖动进度的双向控制
+- 🍎 iOS 后台音频：修复锁屏后音乐必停的问题
+- 🤖 Android 14+ 前台媒体播放服务类型与单色通知图标
+- 📝 技术栈文档对齐实际实现
 
-### 🔧 修复
-- （在此填写修复的问题）
+## 校验
 
-### ⚡ 优化
-- （在此填写性能/体验优化）
+APK 附带同名的 `.sha256` 文件，可使用 `sha256sum -c` 校验下载完整性。
 
-### 📦 安装包
+## 支持平台
 
-| 平台 | 文件 | SHA-256 |
-|------|------|---------|
-| Android | melodyflow-{VERSION}-android.apk | 见同名 .sha256 文件 |
-| Windows | melodyflow-{VERSION}-windows.zip | - |
-| iOS | melodyflow-{VERSION}-ios.ipa | - |
-
-### 🔒 完整性校验
-
-下载后请校验 APK 的 SHA-256 哈希值，确保文件未被篡改：
-
-```bash
-sha256sum melodyflow-{VERSION}-android.apk
-```
-
----
-
-> MelodyFlow 是开源免费软件，仅供个人学习研究使用。
-> 本软件不提供任何音乐资源，所有音乐来自用户本地或第三方服务器。
+- Android 7.0+
+- Windows 10+
+- iOS 13.0+（需自签）

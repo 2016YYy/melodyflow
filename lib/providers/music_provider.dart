@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../models/audio_effects.dart';
 import '../models/lyric.dart';
 import '../models/music_source.dart';
 import '../models/playlist.dart';
@@ -32,6 +33,12 @@ class MusicProvider extends ChangeNotifier {
   Timer? _sleepTimer;
   DateTime? _sleepTimerEndAt;
   bool _sleepStopAfterCurrent = false;
+
+  // 音频效果
+  List<double> _eqGains = List.filled(EqBands.count, 0.0);
+  bool _eqEnabled = true;
+  bool _loudnessEnabled = false;
+  bool _crossfadeEnabled = false;
   List<MusicSource> _sources = [];
   List<Playlist> _playlists = [];
   List<Song> _favoriteSongs = [];
@@ -69,6 +76,20 @@ class MusicProvider extends ChangeNotifier {
     _paletteName = _storage.getPalette();
     _playerSkinName = _storage.getPlayerSkin();
     _includePrerelease = _storage.isIncludePrerelease();
+
+    // 恢复音频效果设置并应用到播放引擎
+    _eqGains = _storage.getEqGains();
+    _eqEnabled = _storage.isEqEnabled();
+    _loudnessEnabled = _storage.isLoudnessEnabled();
+    _crossfadeEnabled = _storage.isCrossfadeEnabled();
+    final savedRate = _storage.getPlaybackRate();
+    await _player.setEqGains(_eqGains);
+    await _player.setEqEnabled(_eqEnabled);
+    await _player.setLoudnessEnabled(_loudnessEnabled);
+    _player.setCrossfadeEnabled(_crossfadeEnabled);
+    if (savedRate != 1.0) {
+      await _player.setRate(savedRate);
+    }
 
     // 订阅播放服务
     _stateSub = _player.playbackStateStream.listen((state) {
@@ -192,6 +213,54 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setPlaybackRate(double rate) async {
     await _player.setRate(rate);
+    await _storage.setPlaybackRate(rate);
+    notifyListeners();
+  }
+
+  // === 音频效果（均衡器 / 响度 / 交叉淡化）===
+  List<double> get eqGains => List.unmodifiable(_eqGains);
+  bool get eqEnabled => _eqEnabled;
+  bool get loudnessEnabled => _loudnessEnabled;
+  bool get crossfadeEnabled => _crossfadeEnabled;
+
+  Future<void> setEqEnabled(bool enabled) async {
+    _eqEnabled = enabled;
+    await _storage.setEqEnabled(enabled);
+    await _player.setEqEnabled(enabled);
+    notifyListeners();
+  }
+
+  Future<void> setEqBand(int index, double gain) async {
+    if (index < 0 || index >= EqBands.count) return;
+    _eqGains[index] = gain.clamp(EqBands.minGain, EqBands.maxGain);
+    await _storage.setEqGains(_eqGains);
+    await _player.setEqBand(index, _eqGains[index]);
+    notifyListeners();
+  }
+
+  Future<void> setEqGains(List<double> gains) async {
+    if (gains.length != EqBands.count) return;
+    _eqGains =
+        gains.map((g) => g.clamp(EqBands.minGain, EqBands.maxGain)).toList();
+    await _storage.setEqGains(_eqGains);
+    await _player.setEqGains(_eqGains);
+    notifyListeners();
+  }
+
+  Future<void> applyEqPreset(EqPreset preset) => setEqGains(preset.gains);
+
+  Future<void> setLoudnessEnabled(bool enabled) async {
+    _loudnessEnabled = enabled;
+    await _storage.setLoudnessEnabled(enabled);
+    await _player.setLoudnessEnabled(enabled);
+    notifyListeners();
+  }
+
+  Future<void> setCrossfadeEnabled(bool enabled) async {
+    _crossfadeEnabled = enabled;
+    await _storage.setCrossfadeEnabled(enabled);
+    _player.setCrossfadeEnabled(enabled);
+    notifyListeners();
   }
 
   // === 睡眠定时器 ===

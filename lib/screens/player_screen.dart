@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../widgets/album_art_widget.dart';
 import '../widgets/gradient_progress_bar.dart';
 import '../widgets/lyrics_view.dart';
+import 'audio_effects_screen.dart';
 import 'queue_screen.dart';
 
 /// 播放器全屏界面 - 沉浸式模糊封面背景、多皮肤、动态主题、封面长按放大
@@ -218,9 +219,123 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ],
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded),
+            color: scheme.onSurfaceVariant,
+            tooltip: '歌曲信息',
+            onPressed: () => _showSongDetail(context, song),
+          ),
           _FavoriteButton(song: song),
         ],
       ),
+    );
+  }
+
+  /// 歌曲详情：展示完整音频元数据
+  void _showSongDetail(BuildContext context, Song song) {
+    String fmtSize(int? bytes) {
+      if (bytes == null || bytes <= 0) return '未知';
+      final mb = bytes / (1024 * 1024);
+      if (mb >= 1) return '${mb.toStringAsFixed(2)} MB';
+      return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    }
+
+    String fmtBitrate(int? bps) {
+      if (bps == null || bps <= 0) return '未知';
+      return '${(bps / 1000).toStringAsFixed(0)} kbps';
+    }
+
+    String fmtSampleRate(int? hz) {
+      if (hz == null || hz <= 0) return '未知';
+      return '${(hz / 1000).toStringAsFixed(1)} kHz';
+    }
+
+    String fmtDuration(Duration d) {
+      final m = d.inMinutes;
+      final s = d.inSeconds.remainder(60);
+      return '$m 分 ${s.toString().padLeft(2, '0')} 秒';
+    }
+
+    String fmtDate(int? epochSeconds) {
+      if (epochSeconds == null || epochSeconds <= 0) return '未知';
+      final dt = DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
+          '${dt.day.toString().padLeft(2, '0')}';
+    }
+
+    final rows = <MapEntry<String, String>>[
+      MapEntry('标题', song.title),
+      MapEntry('艺术家', song.artist),
+      MapEntry('专辑', song.album),
+      if (song.track != null) MapEntry('音轨', '${song.track}'),
+      MapEntry('时长', fmtDuration(song.duration)),
+      MapEntry('格式', song.format ?? '未知'),
+      MapEntry('比特率', fmtBitrate(song.bitrate)),
+      MapEntry('采样率', fmtSampleRate(song.sampleRate)),
+      MapEntry('文件大小', fmtSize(song.size)),
+      MapEntry('添加时间', fmtDate(song.dateAdded)),
+      MapEntry('修改时间', fmtDate(song.dateModified)),
+      MapEntry('文件路径', song.uri),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: scheme.primary),
+                    const SizedBox(width: 8),
+                    Text('歌曲信息',
+                        style: Theme.of(ctx).textTheme.titleLarge),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: rows.map((e) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 80,
+                                child: Text(
+                                  e.key,
+                                  style: TextStyle(
+                                    color: scheme.onSurfaceVariant,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  e.value,
+                                  style: const TextStyle(fontSize: 13.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -358,6 +473,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const QueueScreen()),
+            ),
+          ),
+          _ToolbarItem(
+            icon: Icons.equalizer_rounded,
+            label: '音效',
+            active: provider.eqEnabled && provider.eqGains.any((g) => g.abs() > 0.01) ||
+                provider.loudnessEnabled ||
+                provider.crossfadeEnabled,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AudioEffectsScreen()),
             ),
           ),
           _ToolbarItem(

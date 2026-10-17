@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:media_kit/media_kit.dart';
+import '../models/audio_effects.dart';
 import '../models/song.dart';
 
 /// 音频播放服务 - 基于 media_kit 引擎
 /// 支持 MP3, FLAC, WAV, AAC, OGG, M4A, WMA, ALAC, APE 等多种格式
+/// 并支持 16 段参数均衡器、响度归一化、交叉淡入淡出、变速不变调
 class AudioPlayerService {
   late final Player _player;
   Song? _currentSong;
@@ -11,6 +13,14 @@ class AudioPlayerService {
   int _currentIndex = -1;
   PlaylistMode _repeatMode = PlaylistMode.none;
   bool _shuffle = false;
+
+  // === 音频效果状态 ===
+  List<double> _eqGains = List.filled(EqBands.count, 0.0);
+  bool _eqEnabled = true;
+  bool _loudnessEnabled = false;
+  bool _crossfadeEnabled = false;
+  double _rate = 1.0;
+  double _targetVolume = 100.0;
 
   // 播放状态流
   final StreamController<PlaybackState> _stateController =
@@ -28,7 +38,9 @@ class AudioPlayerService {
   AudioPlayerService() {
     _player = Player(
       configuration: const PlayerConfiguration(
-        // 启用 gapless 播放和硬件加速
+        // 启用音高修正，配合 scaletempo 实现变速不变调
+        pitch: true,
+        title: 'MelodyFlow',
       ),
     );
     _setupListeners();
@@ -62,7 +74,7 @@ class AudioPlayerService {
       position: _player.state.position,
       duration: _player.state.duration,
       volume: _player.state.volume,
-      rate: _player.state.rate,
+      rate: _rate,
       repeatMode: _repeatMode,
       shuffle: _shuffle,
       currentIndex: _currentIndex,
@@ -136,20 +148,38 @@ class AudioPlayerService {
 
     final media = Media(_currentSong!.uri, httpHeaders: headers);
     await _player.open(media, play: true);
+
+    // 切换曲目后重新应用音频滤镜链
+    await _applyAudioFilters();
+
+    // 交叉淡化：淡入
+    if (_crossfadeEnabled) {
+      await _fadeIn();
+    }
+
     _emitState();
   }
 
   /// 播放/暂停
   Future<void> playPause() async {
     if (_player.state.playing) {
+      if (_crossfadeEnabled) await _fadeOut();
       await _player.pause();
     } else {
       await _player.play();
+      if (_crossfadeEnabled) await _fadeIn();
     }
   }
 
-  Future<void> play() => _player.play();
-  Future<void> pause() => _player.pause();
+  Future<void> play() async {
+    await _player.play();
+    if (_crossfadeEnabled) await _fadeIn();
+  }
+
+  Future<void> pause() async {
+    if (_crossfadeEnabled) await _fadeOut();
+    await _player.pause();
+  }
 
   /// 下一首
   Future<void> next() async {
@@ -204,11 +234,19 @@ class AudioPlayerService {
   /// 跳转到指定位置
   Future<void> seek(Duration position) => _player.seek(position);
 
-  /// 设置音量
-  Future<void> setVolume(double volume) => _player.setVolume(volume);
+  /// 设置音量（0-100）
+  Future<void> setVolume(double volume) async {
+    _targetVolume = volume.clamp(0.0, 100.0);
+    await _player.setVolume(_targetVolume);
+    _emitState();
+  }
 
-  /// 设置播放速度
-  Future<void> setRate(double rate) => _player.setRate(rate);
+  /// 设置播放速度（变速不变调，0.25 - 4.0）
+  Future<void> setRate(double rate) async {
+    _rate = rate.clamp(0.25, 4.0);
+    await _applyAudioFilters();
+    _emitState();
+  }
 
   /// 切换循环模式
   PlaylistMode cycleRepeatMode() {
@@ -224,6 +262,115 @@ class AudioPlayerService {
     _emitState();
     return _shuffle;
   }
+
+  // ==================== 音频效果 ====================
+
+  /// 当前均衡器增益（16 段）
+  List<double> get eqGains => List.unmodifiable(_eqGains);
+  bool get eqEnabled => _eqEnabled;
+  bool get loudnessEnabled => _loudnessEnabled;
+  bool get crossfadeEnabled => _crossfadeEnabled;
+  double get rate => _rate;
+
+  /// 设置均衡器开关
+  Future<void> setEqEnabled(bool enabled) async {
+    _eqEnabled = enabled;
+    await _applyAudioFilters();
+  }
+
+  /// 设置单个频段增益（dB）
+  Future<void> setEqBand(int index, double gain) async {
+    if (index < 0 || index >= EqBands.count) return;
+    _eqGains[index] = gain.clamp(EqBands.minGain, EqBands.maxGain);
+    await _applyAudioFilters();
+  }
+
+  /// 批量设置所有频段增益
+  Future<void> setEqGains(List<double> gains) async {
+    if (gains.length != EqBands.count) return;
+    _eqGains =
+        gains.map((g) => g.clamp(EqBands.minGain, EqBands.maxGain)).toList();
+    await _applyAudioFilters();
+  }
+
+  /// 应用预设
+  Future<void> applyEqPreset(EqPreset preset) async {
+    await setEqGains(preset.gains);
+  }
+
+  /// 切换响度归一化
+  Future<void> setLoudnessEnabled(bool enabled) async {
+    _loudnessEnabled = enabled;
+    await _applyAudioFilters();
+  }
+
+  /// 切换交叉淡入淡出
+  void setCrossfadeEnabled(bool enabled) {
+    _crossfadeEnabled = enabled;
+    if (!enabled) {
+      _player.setVolume(_targetVolume);
+    }
+  }
+
+  /// 构建并应用音频滤镜链（scaletempo + equalizer + loudnorm）
+  Future<void> _applyAudioFilters() async {
+    final native = _player.platform;
+    if (native is! NativePlayer) return;
+
+    final filters = <String>[];
+
+    // 1. 变速不变调：scaletempo 按比例拉伸，配合 pitch 保持音高
+    if ((_rate - 1.0).abs() > 0.001) {
+      filters.add('scaletempo:scale=${_rate.toStringAsFixed(4)}');
+    }
+
+    // 2. 16 段参数均衡器
+    if (_eqEnabled && _eqGains.any((g) => g.abs() > 0.01)) {
+      final eqParts = <String>[];
+      for (int i = 0; i < EqBands.count; i++) {
+        final f = EqBands.bands[i].frequency;
+        final g = _eqGains[i];
+        eqParts.add('f=${f.toInt()}:t=q:w=1.0:g=${g.toStringAsFixed(2)}');
+      }
+      filters.add('equalizer=${eqParts.join(',')}');
+    }
+
+    // 3. 响度归一化（ReplayGain 风格，统一不同音源响度）
+    if (_loudnessEnabled) {
+      filters.add('lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]');
+    }
+
+    try {
+      await native.setProperty('af', filters.isEmpty ? '' : filters.join(','));
+    } catch (e) {
+      // 滤镜设置失败时忽略，避免影响正常播放
+    }
+  }
+
+  // ==================== 淡入淡出 ====================
+
+  Future<void> _fadeIn() async {
+    const steps = 10;
+    const stepMs = 30;
+    final target = _targetVolume;
+    await _player.setVolume(0);
+    for (int i = 1; i <= steps; i++) {
+      await Future.delayed(const Duration(milliseconds: stepMs));
+      await _player.setVolume(target * i / steps);
+    }
+  }
+
+  Future<void> _fadeOut() async {
+    const steps = 10;
+    const stepMs = 20;
+    final start = _player.state.volume;
+    for (int i = steps - 1; i >= 0; i--) {
+      await Future.delayed(const Duration(milliseconds: stepMs));
+      await _player.setVolume(start * i / steps);
+    }
+  }
+
+  // ==================== Getters ====================
 
   Song? get currentSong => _currentSong;
   List<Song> get playlist => List.unmodifiable(_playlist);

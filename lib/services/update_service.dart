@@ -62,15 +62,102 @@ class ReleaseAsset {
   }
 }
 
+/// GitHub 下载镜像源
+/// 用户可在设置中切换，解决直连 GitHub 下载慢/卡的问题。
+class GithubMirror {
+  final String id;
+  final String label;
+  final String description;
+  /// 将原始 GitHub 下载 URL 转换为镜像 URL
+  final String Function(String url) transform;
+
+  const GithubMirror({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.transform,
+  });
+}
+
+class GithubMirrors {
+  /// 直连 GitHub（不使用镜像）
+  static const GithubMirror direct = GithubMirror(
+    id: 'direct',
+    label: 'GitHub 直连',
+    description: '直接从 github.com 下载',
+    transform: _identity,
+  );
+
+  /// ghproxy 镜像（社区常用）
+  static const GithubMirror ghproxy = GithubMirror(
+    id: 'ghproxy',
+    label: 'ghProxy',
+    description: '通过 gh-proxy 加速 GitHub 下载',
+    transform: _ghproxy,
+  );
+
+  /// mirror.ghproxy.com
+  static const GithubMirror ghproxyMirror = GithubMirror(
+    id: 'ghproxy-mirror',
+    label: 'ghProxy Mirror',
+    description: 'ghProxy 备用节点',
+    transform: _ghproxyMirror,
+  );
+
+  /// GitHub 加速（99988866 公共）
+  static const GithubMirror acc = GithubMirror(
+    id: 'gh-acc',
+    label: 'GH-ACC',
+    description: 'GitHub 公共加速节点',
+    transform: _ghAcc,
+  );
+
+  /// kkgithub 镜像
+  static const GithubMirror kkgithub = GithubMirror(
+    id: 'kkgithub',
+    label: 'KKGitHub',
+    description: '通过 kkgithub.com 加速',
+    transform: _kkgithub,
+  );
+
+  static const List<GithubMirror> all = [
+    direct,
+    ghproxy,
+    ghproxyMirror,
+    acc,
+    kkgithub,
+  ];
+
+  static GithubMirror fromId(String id) =>
+      all.firstWhere((m) => m.id == id, orElse: () => direct);
+
+  static String _identity(String url) => url;
+
+  static String _ghproxy(String url) =>
+      'https://ghproxy.com/$url';
+
+  static String _ghproxyMirror(String url) =>
+      'https://mirror.ghproxy.com/$url';
+
+  static String _ghAcc(String url) =>
+      'https://gh.api.99988866.xyz/$url';
+
+  static String _kkgithub(String url) =>
+      url.replaceFirst('https://github.com', 'https://kkgithub.com');
+}
+
 /// 应用内更新服务
 /// - 检查 GitHub Release 最新版本
-/// - 下载更新包（带进度条）
+/// - 下载更新包（带进度条，支持高速镜像源）
 /// - 后台下载
 /// - 校验签名/哈希（防篡改）
 class UpdateService {
   final Dio _dio = Dio();
   static const String _githubRepo = '2016YYy/melodyflow';
   static const String _apiBase = 'https://api.github.com/repos/$_githubRepo';
+
+  /// 当前选中的下载镜像（可由设置页动态修改）
+  GithubMirror mirror = GithubMirrors.direct;
 
   /// 获取当前版本
   Future<String> getCurrentVersion() async {
@@ -131,6 +218,8 @@ class UpdateService {
   }
 
   /// 下载更新包（带进度，可挂后台）
+  /// - 优先使用用户在设置中选中的镜像源
+  /// - 若选中的镜像下载失败，自动尝试其他镜像源作为兜底
   /// [onProgress] 回调 (已下载字节, 总字节)
   /// [cancelToken] 可取消下载
   Future<String?> downloadUpdate(
@@ -138,33 +227,52 @@ class UpdateService {
     required void Function(int received, int total) onProgress,
     CancelToken? cancelToken,
   }) async {
-    try {
-      final dir = await getTemporaryDirectory();
-      final savePath = p.join(dir.path, asset.name);
+    final dir = await getTemporaryDirectory();
+    final savePath = p.join(dir.path, asset.name);
 
-      await _dio.download(
-        asset.downloadUrl,
-        savePath,
-        onReceiveProgress: (received, total) {
-          onProgress(received, total);
-        },
-        cancelToken: cancelToken,
-        options: Options(
-          headers: {'Accept': 'application/octet-stream'},
-        ),
-      );
-
-      // 校验文件完整性（简单大小校验）
-      final file = File(savePath);
-      if (await file.length() != asset.size) {
-        throw Exception('下载文件大小不匹配，可能已损坏');
-      }
-
-      return savePath;
-    } catch (e) {
-      debugPrint('下载更新失败: $e');
-      return null;
+    // 构建候选下载源列表：首选用户选择的镜像，随后依次尝试其他镜像
+    final candidates = <String>[];
+    candidates.add(mirror.transform(asset.downloadUrl));
+    for (final m in GithubMirrors.all) {
+      if (m.id != mirror.id) candidates.add(m.transform(asset.downloadUrl));
     }
+
+    Object? lastError;
+    for (final url in candidates) {
+      try {
+        debugPrint('尝试下载源: $url');
+        await _dio.download(
+          url,
+          savePath,
+          onReceiveProgress: (received, total) {
+            onProgress(received, total);
+          },
+          cancelToken: cancelToken,
+          options: Options(
+            headers: {'Accept': 'application/octet-stream'},
+            // 镜像源可能较慢，放宽超时
+            sendTimeout: const Duration(seconds: 30),
+            receiveTimeout: const Duration(minutes: 15),
+            connectTimeout: const Duration(seconds: 20),
+          ),
+        );
+
+        // 校验文件完整性（简单大小校验）
+        final file = File(savePath);
+        if (await file.length() != asset.size) {
+          throw Exception('下载文件大小不匹配，可能已损坏');
+        }
+
+        return savePath;
+      } catch (e) {
+        lastError = e;
+        debugPrint('下载失败（$url）: $e，尝试下一镜像源');
+        continue;
+      }
+    }
+
+    debugPrint('所有下载源均失败: $lastError');
+    return null;
   }
 
   /// 校验更新包签名（SHA-256 + 公钥验证）

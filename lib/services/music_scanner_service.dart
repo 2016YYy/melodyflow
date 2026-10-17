@@ -40,17 +40,32 @@ class MusicScannerService {
         uriType: uriType,
       );
 
-      return songs.map((s) => Song(
-        id: s.id.toString(),
-        title: s.title,
-        artist: s.artist ?? '未知艺术家',
-        album: s.album ?? '未知专辑',
-        albumId: s.albumId?.toString(),
-        duration: Duration(milliseconds: s.duration ?? 0),
-        uri: s.uri ?? s.data,
-        size: s.size,
-        sourceType: MusicSourceType.local,
-      )).toList();
+      return songs.map((s) {
+        // 估算比特率：文件大小(字节) * 8 / 时长(秒) = bps
+        int? estimatedBitrate;
+        final dur = s.duration ?? 0;
+        if (s.size > 0 && dur > 0) {
+          estimatedBitrate = ((s.size * 8) / (dur / 1000)).round();
+        }
+        return Song(
+          id: s.id.toString(),
+          title: s.title,
+          artist: s.artist ?? '未知艺术家',
+          album: s.album ?? '未知专辑',
+          albumId: s.albumId?.toString(),
+          duration: Duration(milliseconds: dur),
+          uri: s.uri ?? s.data,
+          size: s.size,
+          sourceType: MusicSourceType.local,
+          format: s.fileExtension.toUpperCase().isNotEmpty
+              ? s.fileExtension.toUpperCase()
+              : null,
+          bitrate: estimatedBitrate,
+          track: s.track,
+          dateAdded: s.dateAdded,
+          dateModified: s.dateModified,
+        );
+      }).toList();
     } catch (e) {
       debugPrint('扫描本地音乐失败: $e');
       rethrow;

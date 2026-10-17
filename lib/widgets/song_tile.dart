@@ -12,6 +12,7 @@ class SongTile extends StatelessWidget {
   final int? index;
   final VoidCallback? onMore;
   final bool showIndex;
+  /// 点击播放时使用的歌曲列表（不传则使用当前筛选列表）
   final List<Song>? queue;
 
   const SongTile({
@@ -223,6 +224,8 @@ class SongTile extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.xl)),
         title: const Text('歌曲信息'),
         content: SingleChildScrollView(
           child: Column(
@@ -232,12 +235,23 @@ class SongTile extends StatelessWidget {
               _infoRow(context, '标题', song.title),
               _infoRow(context, '艺术家', song.artist),
               _infoRow(context, '专辑', song.album),
+              if (song.track != null)
+                _infoRow(context, '曲目', song.track.toString()),
               _infoRow(
                   context,
                   '时长',
                   song.duration.inSeconds > 0
                       ? '${song.duration.inMinutes}:${(song.duration.inSeconds % 60).toString().padLeft(2, '0')}'
                       : '未知'),
+              if (song.format != null)
+                _infoRow(context, '格式', song.format!.toUpperCase()),
+              if (song.bitrate != null && song.bitrate! > 0)
+                _infoRow(context, '比特率',
+                    '${(song.bitrate! / 1000).round()} kbps'),
+              if (song.sampleRate != null)
+                _infoRow(context, '采样率', '${song.sampleRate} Hz'),
+              if (song.size != null)
+                _infoRow(context, '文件大小', _fmtSize(song.size!)),
               _infoRow(context, '来源', song.sourceType.name),
               _infoRow(context, '路径', song.uri),
             ],
@@ -250,6 +264,12 @@ class SongTile extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static String _fmtSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   static Widget _infoRow(BuildContext context, String label, String value) {

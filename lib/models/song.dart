@@ -15,6 +15,13 @@ class Song {
   final int? size; // 文件大小字节
   final String? mimeType;
   final Map<String, String>? httpHeaders; // 流媒体请求头（WebDAV等认证用）
+  final String? format; // 音频格式（如 MP3/FLAC/WAV）
+  final int? bitrate; // 比特率（bps）
+  final int? sampleRate; // 采样率（Hz）
+  final int? track; // 曲目编号
+  final int? dateAdded; // 添加时间戳（秒）
+  final int? dateModified; // 修改时间戳（秒）
+  final int? playedTimes; // 播放次数
 
   const Song({
     required this.id,
@@ -32,6 +39,13 @@ class Song {
     this.size,
     this.mimeType,
     this.httpHeaders,
+    this.format,
+    this.bitrate,
+    this.sampleRate,
+    this.track,
+    this.dateAdded,
+    this.dateModified,
+    this.playedTimes,
   });
 
   factory Song.fromMap(Map<String, dynamic> map) {
@@ -54,6 +68,13 @@ class Song {
       size: (map['size'] as num?)?.toInt(),
       mimeType: map['mimeType']?.toString(),
       httpHeaders: map['httpHeaders'] as Map<String, String>?,
+      format: map['format']?.toString(),
+      bitrate: (map['bitrate'] as num?)?.toInt(),
+      sampleRate: (map['sampleRate'] as num?)?.toInt(),
+      track: (map['track'] as num?)?.toInt(),
+      dateAdded: (map['dateAdded'] as num?)?.toInt(),
+      dateModified: (map['dateModified'] as num?)?.toInt(),
+      playedTimes: (map['playedTimes'] as num?)?.toInt(),
     );
   }
 
@@ -74,6 +95,13 @@ class Song {
       'size': size,
       'mimeType': mimeType,
       'httpHeaders': httpHeaders,
+      'format': format,
+      'bitrate': bitrate,
+      'sampleRate': sampleRate,
+      'track': track,
+      'dateAdded': dateAdded,
+      'dateModified': dateModified,
+      'playedTimes': playedTimes,
     };
   }
 
@@ -93,6 +121,13 @@ class Song {
     int? size,
     String? mimeType,
     Map<String, String>? httpHeaders,
+    String? format,
+    int? bitrate,
+    int? sampleRate,
+    int? track,
+    int? dateAdded,
+    int? dateModified,
+    int? playedTimes,
   }) {
     return Song(
       id: id ?? this.id,
@@ -110,6 +145,13 @@ class Song {
       size: size ?? this.size,
       mimeType: mimeType ?? this.mimeType,
       httpHeaders: httpHeaders ?? this.httpHeaders,
+      format: format ?? this.format,
+      bitrate: bitrate ?? this.bitrate,
+      sampleRate: sampleRate ?? this.sampleRate,
+      track: track ?? this.track,
+      dateAdded: dateAdded ?? this.dateAdded,
+      dateModified: dateModified ?? this.dateModified,
+      playedTimes: playedTimes ?? this.playedTimes,
     );
   }
 

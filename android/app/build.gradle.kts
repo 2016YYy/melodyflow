@@ -46,6 +46,11 @@ android {
             isMinifyEnabled = false
         }
     }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 kotlin {

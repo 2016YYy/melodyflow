@@ -24,14 +24,14 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.5'
           channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Generate launcher icons
-        run: flutter pub run flutter_launcher_icons
+        run: dart run flutter_launcher_icons
 
       - name: Decode keystore
         run: |
@@ -73,7 +73,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.5'
           channel: 'stable'
 
       - name: Install dependencies
@@ -101,7 +101,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.5'
           channel: 'stable'
 
       - name: Install dependencies

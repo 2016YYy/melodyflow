@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
+import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/section_tiles.dart';
 import '../widgets/update_dialogs.dart';
 import 'about_screen.dart';
+import 'audio_effects_screen.dart';
 
 /// 设置界面 - 分组列表样式
 class SettingsScreen extends StatefulWidget {
@@ -76,6 +78,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _showSkinPicker(context, provider),
           ),
 
+          // 音频效果
+          const SectionHeader('音频效果'),
+          ActionTile(
+            icon: Icons.graphic_eq_rounded,
+            title: '均衡器与音效',
+            subtitle: '16 段均衡 · 响度归一化 · 交叉淡化 · 睡眠定时',
+            palette: palette,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AudioEffectsScreen()),
+            ),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+
           // 应用更新
           const SectionHeader('应用更新'),
           ActionTile(
@@ -91,6 +108,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   )
                 : null,
             onTap: _checking ? null : _checkUpdate,
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ActionTile(
+            icon: Icons.speed_rounded,
+            title: '下载镜像源',
+            subtitle: GithubMirrors.fromId(
+                    provider.storage.getDownloadMirrorId())
+                .label,
+            palette: palette,
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _showMirrorPicker(context, provider),
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           SwitchTile(
@@ -248,6 +276,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     provider.setPlayerSkin(skin.name);
                     Navigator.pop(ctx);
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 下载镜像源选择器
+  void _showMirrorPicker(BuildContext context, MusicProvider provider) {
+    final currentId = provider.storage.getDownloadMirrorId();
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('下载镜像源',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(
+                '直连 GitHub 下载较慢时，可切换到国内镜像源加速；若某个镜像失效，下载时会自动尝试其他源。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              ...GithubMirrors.all.map((mirror) {
+                final selected = currentId == mirror.id;
+                return ListTile(
+                  leading: Icon(
+                    selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                    color: selected ? provider.palette.primary : null,
+                  ),
+                  title: Text(mirror.label,
+                      style: TextStyle(
+                        fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                        color: selected ? provider.palette.primary : null,
+                      )),
+                  subtitle: Text(mirror.description,
+                      style: Theme.of(context).textTheme.bodySmall),
+                  onTap: () async {
+                    await provider.storage.setDownloadMirrorId(mirror.id);
+                    if (context.mounted) setState(() {});
+                    if (ctx.mounted) Navigator.pop(ctx);
                   },
                 );
               }),

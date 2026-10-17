@@ -8,6 +8,9 @@ class UpdateDownloadController extends ChangeNotifier {
   final UpdateService _service = UpdateService();
   CancelToken? _cancelToken;
 
+  /// 设置下载镜像源
+  void setMirror(GithubMirror mirror) => _service.mirror = mirror;
+
   bool _downloading = false;
   double _progress = 0;
   String _status = '';

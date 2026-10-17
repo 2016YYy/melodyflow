@@ -16,7 +16,17 @@ class StorageService {
   static const String _prereleaseKey = 'include_prerelease';
   static const String _lastSongKey = 'last_playing_song';
   static const String _lastPositionKey = 'last_position';
-  static const String _recentSongsKey = 'recent_songs';
+  static const String _downloadMirrorKey = 'download_mirror';
+  // 音频效果
+  static const String _eqGainsKey = 'eq_gains';
+  static const String _eqEnabledKey = 'eq_enabled';
+  static const String _loudnessKey = 'loudness_enabled';
+  static const String _crossfadeKey = 'crossfade_enabled';
+  static const String _rateKey = 'playback_rate';
+  // 最近播放
+  static const String _recentKey = 'recent_songs';
+  /// 最近播放保留上限
+  static const int recentLimit = 100;
 
   late SharedPreferences _prefs;
 
@@ -138,11 +148,53 @@ class StorageService {
     }
   }
 
-  // === 最近播放（最新在前，上限 100 首）===
-  static const int recentLimit = 100;
+  Map<String, dynamic>? getLastPlaying() {
+    final s = _prefs.getString(_lastSongKey);
+    final pos = _prefs.getInt(_lastPositionKey);
+    if (s == null) return null;
+    return {
+      'song': Song.fromMap(jsonDecode(s)),
+      'position': Duration(milliseconds: pos ?? 0),
+    };
+  }
 
+  // === 下载镜像源 ===
+  String getDownloadMirrorId() => _prefs.getString(_downloadMirrorKey) ?? 'direct';
+  Future<void> setDownloadMirrorId(String id) =>
+      _prefs.setString(_downloadMirrorKey, id);
+
+  // === 音频效果 ===
+  List<double> getEqGains() {
+    final data = _prefs.getString(_eqGainsKey);
+    if (data == null) return List.filled(16, 0.0);
+    try {
+      final list = jsonDecode(data) as List;
+      final gains = list.map((e) => (e as num).toDouble()).toList();
+      if (gains.length == 16) return gains;
+    } catch (_) {}
+    return List.filled(16, 0.0);
+  }
+
+  Future<void> setEqGains(List<double> gains) =>
+      _prefs.setString(_eqGainsKey, jsonEncode(gains));
+
+  bool isEqEnabled() => _prefs.getBool(_eqEnabledKey) ?? true;
+  Future<void> setEqEnabled(bool v) => _prefs.setBool(_eqEnabledKey, v);
+
+  bool isLoudnessEnabled() => _prefs.getBool(_loudnessKey) ?? false;
+  Future<void> setLoudnessEnabled(bool v) =>
+      _prefs.setBool(_loudnessKey, v);
+
+  bool isCrossfadeEnabled() => _prefs.getBool(_crossfadeKey) ?? false;
+  Future<void> setCrossfadeEnabled(bool v) =>
+      _prefs.setBool(_crossfadeKey, v);
+
+  double getPlaybackRate() => _prefs.getDouble(_rateKey) ?? 1.0;
+  Future<void> setPlaybackRate(double v) => _prefs.setDouble(_rateKey, v);
+
+  // === 最近播放 ===
   List<Song> getRecentSongs() {
-    final data = _prefs.getStringList(_recentSongsKey) ?? [];
+    final data = _prefs.getStringList(_recentKey) ?? [];
     final result = <Song>[];
     for (final item in data) {
       try {
@@ -156,17 +208,15 @@ class StorageService {
   }
 
   Future<void> saveRecentSongs(List<Song> songs) async {
-    final data = songs.map((s) => jsonEncode(s.toMap())).toList();
-    await _prefs.setStringList(_recentSongsKey, data);
+    final limited = songs.take(recentLimit).toList();
+    final data = limited.map((s) => jsonEncode(s.toMap())).toList();
+    await _prefs.setStringList(_recentKey, data);
   }
 
-  Map<String, dynamic>? getLastPlaying() {
-    final s = _prefs.getString(_lastSongKey);
-    final pos = _prefs.getInt(_lastPositionKey);
-    if (s == null) return null;
-    return {
-      'song': Song.fromMap(jsonDecode(s)),
-      'position': Duration(milliseconds: pos ?? 0),
-    };
+  Future<void> addToRecent(Song song) async {
+    final list = getRecentSongs();
+    list.removeWhere((s) => s.id == song.id);
+    list.insert(0, song);
+    await saveRecentSongs(list);
   }
 }

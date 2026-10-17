@@ -25,6 +25,9 @@ Future<void> runUpdateCheck(BuildContext context) async {
 /// 下载更新流程：显示进度弹窗，完成后提示安装
 Future<void> runUpdateDownload(BuildContext context, ReleaseInfo release) async {
   final controller = UpdateDownloadController();
+  // 应用用户选择的下载镜像源
+  final mirrorId = context.read<MusicProvider>().storage.getDownloadMirrorId();
+  controller.setMirror(GithubMirrors.fromId(mirrorId));
   final messenger = ScaffoldMessenger.of(context);
   final future = controller.start(release);
   unawaited(showDownloadProgressDialog(context, controller));

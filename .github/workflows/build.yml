@@ -34,7 +34,7 @@ jobs:
           FLUTTER_DIR="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
           BG="$FLUTTER_DIR/packages/flutter_tools/gradle/build.gradle.kts"
           echo "Patching $BG"
-          sed -i '/^`kotlin-dsl`$/d; /id("org.gradle.kotlin.kotlin-dsl")/d' "$BG"
+          sed -i '/kotlin-dsl/d' "$BG"
           grep -n 'kotlin-dsl' "$BG" || echo "kotlin-dsl line removed OK"
 
       - name: Diagnose gradle kotlin-dsl resolution

@@ -22,6 +22,13 @@ class AudioPlayerService {
   double _rate = 1.0;
   double _targetVolume = 100.0;
 
+  // === 通知栏 / 锁屏控制回调（由 audio_service 装配后在外部设置） ===
+  /// 曲目切换时回调，用于同步通知栏媒体信息
+  void Function(Song? song)? onSongChanged;
+
+  /// 播放状态 / 进度变化时回调，用于同步通知栏按钮与系统播放状态
+  void Function(bool playing, Duration position, Duration duration)? onPlaybackChanged;
+
   // 播放状态流
   final StreamController<PlaybackState> _stateController =
       StreamController<PlaybackState>.broadcast();
@@ -68,6 +75,15 @@ class AudioPlayerService {
     _player.stream.rate.listen((_) => _emitState());
   }
 
+  /// 把当前播放状态推送到通知栏 / 锁屏控制
+  void _notifyPlaybackChanged([bool? playing]) {
+    onPlaybackChanged?.call(
+      playing ?? _player.state.playing,
+      _player.state.position,
+      _player.state.duration,
+    );
+  }
+
   void _emitState() {
     _stateController.add(PlaybackState(
       isPlaying: _player.state.playing,
@@ -80,6 +96,11 @@ class AudioPlayerService {
       currentIndex: _currentIndex,
       playlistLength: _playlist.length,
     ));
+    onPlaybackChanged?.call(
+      _player.state.playing,
+      _player.state.position,
+      _player.state.duration,
+    );
   }
 
   /// 跳转到队列中的指定位置播放
@@ -99,6 +120,7 @@ class AudioPlayerService {
       _currentIndex = -1;
       _currentSong = null;
       _songController.add(null);
+      onSongChanged?.call(null);
       _emitState();
       return;
     }
@@ -122,6 +144,7 @@ class AudioPlayerService {
     _currentIndex = -1;
     _currentSong = null;
     _songController.add(null);
+    onSongChanged?.call(null);
     _emitState();
   }
 
@@ -136,6 +159,7 @@ class AudioPlayerService {
     if (_currentIndex < 0 || _currentIndex >= _playlist.length) return;
     _currentSong = _playlist[_currentIndex];
     _songController.add(_currentSong);
+    onSongChanged?.call(_currentSong);
 
     // 构建请求头：WebDAV / 网络音源需要认证
     Map<String, String>? headers;
@@ -165,20 +189,24 @@ class AudioPlayerService {
     if (_player.state.playing) {
       if (_crossfadeEnabled) await _fadeOut();
       await _player.pause();
+      _notifyPlaybackChanged(false);
     } else {
       await _player.play();
       if (_crossfadeEnabled) await _fadeIn();
+      _notifyPlaybackChanged(true);
     }
   }
 
   Future<void> play() async {
     await _player.play();
     if (_crossfadeEnabled) await _fadeIn();
+    _notifyPlaybackChanged(true);
   }
 
   Future<void> pause() async {
     if (_crossfadeEnabled) await _fadeOut();
     await _player.pause();
+    _notifyPlaybackChanged(false);
   }
 
   /// 下一首
@@ -232,7 +260,10 @@ class AudioPlayerService {
   }
 
   /// 跳转到指定位置
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+    _notifyPlaybackChanged(_player.state.playing);
+  }
 
   /// 设置音量（0-100）
   Future<void> setVolume(double volume) async {

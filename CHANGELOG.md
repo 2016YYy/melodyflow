@@ -6,6 +6,22 @@
 
 ---
 
+## [1.7.0] - 2026-10-17
+
+### 🔧 后台播放与通知栏控制（补齐缺失功能）
+
+- **接入 audio_service**：将 `AudioPlayerService` 的播放状态同步到系统通知栏、锁屏媒体控制中心与耳机 / 蓝牙线控（此前 `pubspec.yaml` 已声明 `audio_service` / `audio_session` 依赖，但 `lib/` 下从未接线，功能实际缺失）
+- **双向同步**：播放 / 暂停 / 上一首 / 下一首 / 拖动进度，通知栏与 APP 内播放页完全互通
+- **音频会话**：通过 `audio_session` 配置音乐音频类别，正确处理音频焦点、来电/耳机拔出自动暂停等系统行为
+- **iOS 后台音频**：在 `Info.plist` 增加 `UIBackgroundModes: audio`，修复 iOS 锁屏后音乐必停的问题
+- **Android 通知图标**：新增单色矢量图标 `ic_stat_music_note.xml`，并显式声明 `AudioService` 的 `foregroundServiceType="mediaPlayback"`（Android 14+ 前台媒体服务必需）
+
+本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
+
+版本格式：`主版本号.次版本号.修订号`
+
+---
+
 ## [1.6.0] - 2026-10-17
 
 ### 🎛️ 音频效果

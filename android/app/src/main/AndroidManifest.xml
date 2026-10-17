@@ -45,6 +45,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- 后台播放服务：audio_service 通过依赖清单合并自动注册。
+             这里显式声明以保证 API 33+ 的后台媒体播放类型正确识别。 -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="MissingClass">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
     </application>
     <queries>
         <intent>

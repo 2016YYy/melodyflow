@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../widgets/album_art_widget.dart';
 import '../widgets/gradient_progress_bar.dart';
 import '../widgets/lyrics_view.dart';
+import 'queue_screen.dart';
 
 /// 播放器全屏界面 - 沉浸式模糊封面背景、多皮肤、动态主题、封面长按放大
 class PlayerScreen extends StatefulWidget {
@@ -72,7 +73,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 _buildProgress(provider, palette, scheme),
                 const SizedBox(height: 8),
                 _buildControls(context, provider, palette, scheme),
-                const SizedBox(height: 20),
+                const SizedBox(height: 6),
+                _buildBottomToolbar(context, provider, scheme),
+                const SizedBox(height: 14),
               ],
             ),
           ),
@@ -337,6 +340,155 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  /// 底部工具条：播放队列 / 倍速 / 睡眠定时
+  Widget _buildBottomToolbar(
+      BuildContext context, MusicProvider provider, ColorScheme scheme) {
+    final rate = provider.playbackRate;
+    final timerActive = provider.sleepTimerActive;
+    final remaining = provider.sleepTimerRemaining;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _ToolbarItem(
+            icon: Icons.queue_music_rounded,
+            label: '队列',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const QueueScreen()),
+            ),
+          ),
+          _ToolbarItem(
+            icon: Icons.speed_rounded,
+            label: rate == 1.0
+                ? '倍速'
+                : '${rate.toStringAsFixed(rate == rate.roundToDouble() ? 0 : 2)}x',
+            active: rate != 1.0,
+            onTap: () => _showRatePicker(context, provider),
+          ),
+          _ToolbarItem(
+            icon: Icons.bedtime_rounded,
+            label: timerActive
+                ? (provider.sleepStopAfterCurrent
+                    ? '播完本首'
+                    : remaining != null
+                        ? '${remaining.inMinutes + 1}分钟'
+                        : '定时')
+                : '定时',
+            active: timerActive,
+            onTap: () => _showSleepTimerSheet(context, provider),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 倍速选择
+  void _showRatePicker(BuildContext context, MusicProvider provider) {
+    const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        final current = provider.playbackRate;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('倍速播放', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: rates.map((r) {
+                    final selected = (r - current).abs() < 0.001;
+                    return ChoiceChip(
+                      label: Text('${r}x'),
+                      selected: selected,
+                      labelStyle: TextStyle(
+                        color:
+                            selected ? scheme.onPrimary : scheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      onSelected: (_) {
+                        provider.setPlaybackRate(r);
+                        Navigator.pop(ctx);
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 睡眠定时器面板
+  void _showSleepTimerSheet(BuildContext context, MusicProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        Widget option(IconData icon, String label, VoidCallback onTap) {
+          return ListTile(
+            leading: Icon(icon, color: scheme.primary),
+            title: Text(label),
+            onTap: () {
+              onTap();
+              Navigator.pop(ctx);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text('睡眠定时',
+                      style: Theme.of(ctx).textTheme.titleLarge),
+                ),
+                option(Icons.timer_outlined, '15 分钟',
+                    () => provider.setSleepTimer(const Duration(minutes: 15))),
+                option(Icons.timer_outlined, '30 分钟',
+                    () => provider.setSleepTimer(const Duration(minutes: 30))),
+                option(Icons.timer_outlined, '45 分钟',
+                    () => provider.setSleepTimer(const Duration(minutes: 45))),
+                option(Icons.timer_outlined, '60 分钟',
+                    () => provider.setSleepTimer(const Duration(minutes: 60))),
+                option(Icons.music_note_rounded, '播完当前歌曲',
+                    () => provider.setSleepTimer(null, stopAfterCurrent: true)),
+                if (provider.sleepTimerActive)
+                  ListTile(
+                    leading:
+                        const Icon(Icons.close_rounded, color: AppColors.danger),
+                    title: const Text('取消定时',
+                        style: TextStyle(color: AppColors.danger)),
+                    onTap: () {
+                      provider.cancelSleepTimer();
+                      Navigator.pop(ctx);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// 皮肤选择器
   void _showSkinPicker(BuildContext context, MusicProvider provider) {
     final scheme = Theme.of(context).colorScheme;
@@ -419,6 +571,44 @@ class _PlayerScreenState extends State<PlayerScreen> {
         opaque: false,
         pageBuilder: (context, animation, secondaryAnimation) =>
             _ArtworkViewer(song: song),
+      ),
+    );
+  }
+}
+
+/// 底部工具条项
+class _ToolbarItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _ToolbarItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = active ? scheme.primary : scheme.onSurfaceVariant;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 24, color: color),
+            const SizedBox(height: 3),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11, color: color, fontWeight: FontWeight.w500)),
+          ],
+        ),
       ),
     );
   }

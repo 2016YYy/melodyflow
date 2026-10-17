@@ -16,6 +16,7 @@ class StorageService {
   static const String _prereleaseKey = 'include_prerelease';
   static const String _lastSongKey = 'last_playing_song';
   static const String _lastPositionKey = 'last_position';
+  static const String _recentSongsKey = 'recent_songs';
 
   late SharedPreferences _prefs;
 
@@ -135,6 +136,28 @@ class StorageService {
       await _prefs.setString(_lastSongKey, jsonEncode(song.toMap()));
       await _prefs.setInt(_lastPositionKey, position.inMilliseconds);
     }
+  }
+
+  // === 最近播放（最新在前，上限 100 首）===
+  static const int recentLimit = 100;
+
+  List<Song> getRecentSongs() {
+    final data = _prefs.getStringList(_recentSongsKey) ?? [];
+    final result = <Song>[];
+    for (final item in data) {
+      try {
+        final decoded = jsonDecode(item);
+        if (decoded is Map<String, dynamic>) {
+          result.add(Song.fromMap(decoded));
+        }
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  Future<void> saveRecentSongs(List<Song> songs) async {
+    final data = songs.map((s) => jsonEncode(s.toMap())).toList();
+    await _prefs.setStringList(_recentSongsKey, data);
   }
 
   Map<String, dynamic>? getLastPlaying() {

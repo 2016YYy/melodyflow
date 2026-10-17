@@ -16,11 +16,12 @@
 - **iOS 后台音频**：在 `Info.plist` 增加 `UIBackgroundModes: audio`，修复 iOS 锁屏后音乐必停的问题
 - **Android 通知图标**：新增单色矢量图标 `ic_stat_music_note.xml`，并显式声明 `AudioService` 的 `foregroundServiceType="mediaPlayback"`（Android 14+ 前台媒体服务必需）
 
-本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
+### 🧰 工程与发布
 
-版本格式：`主版本号.次版本号.修订号`
+- **修复 CI 发布缺陷**：补充缺失的 `.github/release_template.md`，此前 `action-gh-release` 会因 `body_path` 指向不存在的文件而失败，导致三个平台构建成功后仍无法创建 Release
+- **完善发布流程**：新增 `scripts/release-v1.7.0.ps1` 一键发布脚本（推送 tag 自动触发云端构建，并输出签名 Secret 配置项）
+- **校正文档**：README 技术栈补充 `audio_session`，项目结构补充 `audio_handler.dart`，下载表版本号更新为 `v1.7.0`
 
----
 
 ## [1.6.0] - 2026-10-17
 

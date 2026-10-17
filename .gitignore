@@ -66,3 +66,11 @@ android/local.properties
 *.sha256
 melodyflow-v*-*.apk
 android/build/
+
+# Local DSH agent backup directory
+_backup/
+
+# Local build/probe artifacts
+_analyze.log
+_fhome/
+_pubget.log

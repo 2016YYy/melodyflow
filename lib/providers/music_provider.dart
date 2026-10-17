@@ -13,6 +13,7 @@ import '../services/lyrics_service.dart';
 import '../services/music_scanner_service.dart';
 import '../services/remote_source_service.dart';
 import '../services/storage_service.dart';
+import '../services/audio_handler.dart' show audioServiceHandler;
 import '../theme/app_theme.dart';
 
 /// 全局音乐状态提供者
@@ -91,6 +92,9 @@ class MusicProvider extends ChangeNotifier {
       await _player.setRate(savedRate);
     }
 
+    // 装配后台播放 / 通知栏控制
+    _setupAudioServiceHandler();
+
     // 订阅播放服务
     _stateSub = _player.playbackStateStream.listen((state) {
       _playbackState = state;
@@ -115,6 +119,28 @@ class MusicProvider extends ChangeNotifier {
     });
 
     notifyListeners();
+  }
+
+  /// 把播放引擎的状态变化同步到通知栏 / 锁屏媒体控制
+  void _setupAudioServiceHandler() {
+    final handler = audioServiceHandler;
+    if (handler == null) return;
+
+    _player.onSongChanged = handler.updateMedia;
+    _player.onPlaybackChanged = (playing, position, duration) {
+      handler.updatePlaybackState(
+        playing: playing,
+        position: position,
+        duration: duration,
+      );
+    };
+
+    // 反向链路：通知栏 / 锁屏的播放、暂停、上下首、拖动进度 -> 播放引擎
+    handler.onPlay = () => _player.play();
+    handler.onPause = () => _player.pause();
+    handler.onNext = () => _player.next();
+    handler.onPrevious = () => _player.previous();
+    handler.onSeek = (position) => _player.seek(position);
   }
 
   // === 主题 ===
@@ -530,6 +556,8 @@ class MusicProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _player.onSongChanged = null;
+    _player.onPlaybackChanged = null;
     _stateSub?.cancel();
     _posSub?.cancel();
     _songSub?.cancel();

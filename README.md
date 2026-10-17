@@ -29,7 +29,7 @@ MelodyFlow 是一款基于 **Flutter** 开发的开源跨平台音乐播放器�
 - ⚡ 基于 [media_kit](https://github.com/media-kit/media-kit) 的高性能音频引擎
 - 🔁 单曲循环 / 列表循环 / 随机播放
 - ⏩ 倍速播放（0.5x ~ 2.0x）
-- 📱 后台播放与通知栏控制
+- 📱 真正的后台播放：系统通知栏 / 锁屏媒体控制中心 / 耳机蓝牙线控**双向控制**（播放、暂停、上下首、拖拽进度），基于 audio_service + audio_session
 - 🎨 根据封面自动取色的沉浸式界面
 - 🕒 睡眠定时器（15/30/45/60 分钟 / 播完当前歌曲自动暂停）
 - 🎶 播放队列管理（跳转 / 移除 / 清空）
@@ -57,9 +57,9 @@ MelodyFlow 是一款基于 **Flutter** 开发的开源跨平台音乐播放器�
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Android | `melodyflow-vX.X.X-android.apk` | Android 7.0+ |
-| iOS | `melodyflow-vX.X.X-ios.ipa` | iOS 13.0+（需自签） |
-| Windows | `melodyflow-vX.X.X-windows.exe` | Windows 10+ |
+| Android | `melodyflow-v1.7.0-android.apk` | Android 7.0+ |
+| iOS | `melodyflow-v1.7.0-ios.ipa` | iOS 13.0+（需自签） |
+| Windows | `melodyflow-v1.7.0-windows.exe` | Windows 10+ |
 
 ### 从源码构建
 
@@ -92,7 +92,7 @@ flutter build ios --release
 |------|------|
 | 跨平台框架 | [Flutter](https://flutter.dev) / Dart |
 | 音频引擎 | [media_kit](https://github.com/media-kit/media-kit) |
-| 后台播放 | [audio_service](https://pub.dev/packages/audio_service) |
+| 后台播放 | [audio_service](https://pub.dev/packages/audio_service) + [audio_session](https://pub.dev/packages/audio_session)（已落地：通知栏 / 锁屏 / 线控双向控制） |
 | 本地扫描 | [on_audio_query](https://pub.dev/packages/on_audio_query) |
 | 网络请求 | [dio](https://pub.dev/packages/dio) |
 | 状态管理 | [provider](https://pub.dev/packages/provider) |
@@ -115,6 +115,7 @@ melodyflow/
 │   ├── services/                  # 业务服务
 │   │   ├── music_scanner_service.dart   # 本地音乐扫描
 │   │   ├── audio_player_service.dart    # 音频播放引擎
+│   │   ├── audio_handler.dart            # 后台播放/通知栏/锁屏控制 (audio_service 接线)
 │   │   ├── lyrics_service.dart          # 在线歌词
 │   │   ├── album_art_service.dart       # 专辑封面
 │   │   ├── remote_source_service.dart   # 第三方音源

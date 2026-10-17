@@ -32,13 +32,10 @@ jobs:
 
       - name: Diagnose gradle kotlin-dsl resolution
         run: |
+          env | grep -i -E 'proxy|mirror|gradle' || true
+          curl -sSI https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom 2>&1 | head -12 || echo CURL_FAILED
           cd android
-          ./gradlew --version
-          echo "=== testing plugin portal from runner ==="
-          curl -sI https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom | head -5
-          echo "=== gradle help (triggers included build init) ==="
-          ./gradlew help --stacktrace 2>&1 | tail -60 || true
-
+          ./gradlew help --stacktrace 2>&1 | grep -A 40 'What went wrong' || ./gradlew help 2>&1 | tail -40 || true
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 

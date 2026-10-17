@@ -30,6 +30,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Diagnose gradle kotlin-dsl resolution
+        run: |
+          cd android
+          ./gradlew --version
+          echo "=== testing plugin portal from runner ==="
+          curl -sI https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom | head -5
+          echo "=== gradle help (triggers included build init) ==="
+          ./gradlew help --stacktrace 2>&1 | tail -60 || true
+
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 

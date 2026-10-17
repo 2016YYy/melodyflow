@@ -30,30 +30,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Patch Flutter SDK gradle repos (kotlin-dsl resolution)
-        run: |
-          FLUTTER_DIR="$(dirname "$(dirname "$(which flutter)")")"
-          SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle"
-          if [ ! -f "$SG" ]; then SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle.kts"; fi
-          echo "Patching $SG"
-          cat > "$SG" <<'EOF'
-          pluginManagement {
-              repositories {
-                  gradlePluginPortal()
-                  mavenCentral()
-                  google()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-          cat "$SG"
-
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 

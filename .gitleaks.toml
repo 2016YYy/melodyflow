@@ -57,7 +57,7 @@ keywords = ["storepassword", "keypassword"]
 [[rules]]
 id = "plaintext-password-in-doc"
 description = "文档或脚本中出现明文口令"
-regex = '''(?i)(密码|口令)\s*[:：|]\s*[`"']?([A-Za-z0-9@#$%^&*_\-]{6,})[`"']?'''
+regex = '''(?i)(密码|口令)\s*[:：|]?\s*[`"']?([A-Za-z0-9@#$%^&*_\-]{6,})[`"']?'''
 keywords = ["密码", "口令"]
 
 # 签名口令以默认值/回退字面量形式出现（如 storePassword = env ?: "xxxx"）

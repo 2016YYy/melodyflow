@@ -248,7 +248,8 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-android, build-windows, build-ios]
+    # 仅依赖实际启用的构建产物；windows/ios 当前以 `if: false` 临时禁用，不应阻塞发布
+    needs: [build-android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

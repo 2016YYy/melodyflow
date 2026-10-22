@@ -6,6 +6,16 @@
 
 ---
 
+## [1.7.1] - 2026-10-22
+
+### 🔒 安全：清除历史中泄露的签名密钥口令
+
+- **重写 Git 历史**（git-filter-repo），彻底移除散落在历史提交中的发布签名密钥库明文口令（即原主线密钥库口令与 v1.5.0 误用密钥口令）。该口令曾出现于 `docs/signing-verification.md`、`scripts/release-v1.7.0.ps1`、`android/app/build.gradle.kts` 等多处历史提交，任何克隆仓库者均可读取。
+- **修复 CI 密钥扫描失效**：`secret-scan.yml` 此前依赖 `.gitleaksignore` 压制历史命中，导致流水线"永远绿"，形成假阴性安全错觉。现已移除该掩盖文件，并锁定 gitleaks 版本、`gitleaks git`/`gitleaks dir` 任一命中即阻断合并与发布。
+- **增强检测规则**：`.gitleaks.toml` 的 `plaintext-password-in-doc` 规则扩展为兼容 `密码 x`、`密码:x`、`密码|x`、`密码：x` 多种分隔写法，补上空格分隔口令的漏检缺口。
+- **修复发布流水线**：`build.yml` 的 Release 阶段此前依赖已禁用的 windows/ios 产物，会导致新版本发布失败；现已仅依赖实际构建产物 `android-apk/*`。
+- **⚠️ 仍须人工处置**：密钥库口令已暴露，请在本地将 `melodyflow-release.jks` 的 store/key 口令更换为新值，并同步更新 GitHub Actions Secret `KEYSTORE_PASSWORD` / `KEY_PASSWORD`（及必要时重新生成签名密钥）。
+
 ## [1.7.0] - 2026-10-17
 
 ### 🔧 后台播放与通知栏控制（补齐缺失功能）

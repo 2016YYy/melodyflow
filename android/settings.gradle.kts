@@ -1,9 +1,10 @@
-import java.util.Properties
-
 pluginManagement {
     val flutterSdkPath =
         run {
-            val properties = Properties()
+            // 必须使用全限定名 java.util.Properties()：Gradle Kotlin DSL 会把 settings 脚本
+            // 分阶段编译，pluginManagement {} 属于第一阶段，该阶段不应用文件顶部的 import 语句，
+            // 因此这里写 Properties() 会报 "Unresolved reference: Properties"。
+            val properties = java.util.Properties()
             file("local.properties").inputStream().use { properties.load(it) }
             val flutterSdkPath = properties.getProperty("flutter.sdk")
             require(flutterSdkPath != null) { "flutter.sdk not set in local.properties" }

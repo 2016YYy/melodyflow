@@ -42,26 +42,30 @@ jobs:
           rm -rf ~/.gradle/caches/jars-* || true
           ls ~/.gradle/caches 2>/dev/null || echo "no gradle caches"
 
-      - name: Patch flutter_tools (remove kotlin-dsl only)
+      - name: Patch flutter_tools (repositories only, keep kotlin-dsl)
         run: |
           set -e
           FLUTTER_DIR="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
           BG="$FLUTTER_DIR/packages/flutter_tools/gradle/build.gradle.kts"
-          echo "Patching $BG"
+          echo "flutter_tools build file: $BG"
           cp "$BG" /tmp/build.gradle.kts.orig
-          # 仅删除 kotlin-dsl 声明行（included build 无法命中 Gradle 内置插件短路，会去仓库找不存在的 marker）
-          sed -i '/^[[:space:]]*`kotlin-dsl`[[:space:]]*$/d' "$BG"
-          # Kotlin JVM 插件版本改为 2.4.10：该版本已在本 job 的最小复现中
-          # 被 Gradle 成功从插件仓库下载（2.2.20 在此环境反复解析失败）
-          sed -i 's/kotlin("jvm") version "2.2.20"/kotlin("jvm") version "2.4.10"/' "$BG"
-          echo "=== diff ==="
-          diff /tmp/build.gradle.kts.orig "$BG" || true
-          echo "=== remaining kotlin-dsl references (should be none) ==="
-          grep -n 'kotlin-dsl' "$BG" || echo "none"
-          echo "=== patched plugins block ==="
+
+          # 重要：这里【不再】删除 `kotlin-dsl` 声明。
+          # 历史版本曾因"included build 无法解析 kotlin-dsl"而删掉该行，
+          # 但那是因为 android/gradle.properties 里的本地代理(127.0.0.1:18080)
+          # 导致插件无法下载。代理问题已修复，kotlin-dsl 可正常解析；
+          # 而 kotlin-dsl 正是提供 Gradle Kotlin DSL API
+          # (extra / doLast / dependsOn / repositories / matchingFallbacks ...)
+          # 的插件，删除它会导致 flutter_tools 插件编译报大量
+          # "Unresolved reference" 错误。
+
+          echo "=== plugins block (保持原样，不做任何删除) ==="
           sed -n '1,15p' "$BG"
+          echo "=== 确认 kotlin-dsl 仍在 ==="
+          grep -n 'kotlin-dsl' "$BG" || { echo "ERROR: kotlin-dsl 缺失，终止构建"; exit 1; }
+
           # included build 缺少 pluginManagement，默认仅 gradlePluginPortal；
-          # 显式加入 Maven Central（kotlin jvm marker 在其上确认存在）
+          # 显式加入 Maven Central 与 Google（kotlin-dsl / kotlin jvm marker 所在仓库）
           SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle.kts"
           echo "=== original settings.gradle.kts ==="
           cat "$SG"
@@ -83,8 +87,7 @@ jobs:
           } > "$SG"
           echo "=== patched settings.gradle.kts ==="
           cat "$SG"
-          echo "=== patched settings.gradle.kts ==="
-          cat "$SG"
+
 
       - name: Pre-build flutter_tools gradle plugin (root build)
         run: |
@@ -103,6 +106,8 @@ jobs:
             grep -E "^e: |error:|Compilation error|What went wrong|Could not|Caused by:" /tmp/prebuild.log | head -30
             echo "=== prebuild 失败：编译错误上下文 ==="
             grep -B2 -A6 "^e: " /tmp/prebuild.log | head -40
+            echo "=== prebuild 失败：仓库解析线索 ==="
+            grep -iE "Could not resolve plugin|Plugin .* was not found|Resource missing|dl\.google\.com" /tmp/prebuild.log | head -20
           fi
           echo "=== build outputs ==="
           ls -la build/libs 2>/dev/null || echo "no build/libs"

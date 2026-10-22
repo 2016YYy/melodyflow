@@ -58,6 +58,9 @@ pwsh -File scripts/setup-gitleaks.ps1
   ```
 - `android/app/build.gradle.kts` 读取顺序：环境变量 → `local.properties` → 未配置时使用 debug 签名并告警
 
+> **2026-10-22 已更换密钥库口令**：因旧口令曾出现在提交历史中，已按泄露处置流程更换（旧口令失效）。
+> 新口令**不写入仓库**，只保存在本地 `android/local.properties` 与离线密钥库记录中；证书指纹未变，已发布版本升级兼容性不受影响。
+
 ## 2026-10-22 历史审计结论（摘要）
 
 - 扫描范围：全部 refs 共 41 个提交（含 main、v1.6.0、各 tag）

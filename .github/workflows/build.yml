@@ -98,26 +98,7 @@ jobs:
           echo "PREBUILD_EXIT=${PIPESTATUS[0]}"
           echo "=== build outputs ==="
           ls -la build/libs 2>/dev/null || echo "no build/libs"
-          cd /
-
-      - name: Minimal gradle plugin repro
-        run: |
-          set +e
-          WORK=/tmp/gradle-minimal
-          mkdir -p "$WORK"
-          cd "$WORK"
-          echo 'rootProject.name = "minimal"' > settings.gradle.kts
-          cat > build.gradle.kts <<'GEOF'
-          plugins {
-              `java-gradle-plugin`
-              `kotlin-dsl`
-          }
-          GEOF
-          echo "=== minimal build.gradle.kts ==="
-          cat build.gradle.kts
-          echo "=== run system gradle with stacktrace ==="
-          gradle build --stacktrace --info 2>&1 | grep -iE "kotlin-dsl|plugins.gradle|could not|ssl|proxy|UnknownHost|resolv" | head -30
-          echo "MINIMAL_EXIT=${PIPESTATUS[0]}"
+          gradle --stop 2>&1 | tail -3 || true
           cd /
 
       - name: Diagnose network and java TLS
@@ -163,8 +144,24 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
+      - name: Stop gradle daemons before build
+        run: |
+          cd android
+          ./gradlew --stop 2>&1 | tail -3 || true
+          pkill -f GradleDaemon 2>/dev/null || true
+          rm -rf ~/.gradle/daemon || true
+          cd ..
+
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          set +e
+          flutter build apk --release 2>&1 | tee /tmp/apk-build.log
+          STATUS=${PIPESTATUS[0]}
+          if [ $STATUS -ne 0 ]; then
+            echo "=== build failed: plugin/network context ==="
+            grep -iE "kotlin-dsl|plugins.gradle|could not|not found|resolved plugin|ssl|proxy|offline|daemon" /tmp/apk-build.log | head -40
+          fi
+          exit $STATUS
         env:
           KEYSTORE_PATH: melodyflow-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

@@ -1,4 +1,4 @@
-# MelodyFlow v1.7.0 发布脚本（爸爸本地执行，GCM 可弹窗）
+﻿# MelodyFlow v1.7.0 发布脚本（爸爸本地执行，GCM 可弹窗）
 # 用法：在仓库根目录运行
 #   powershell -ExecutionPolicy Bypass -File scripts/release-v1.7.0.ps1
 # 安全：仓库内不保存任何签名口令；口令来自环境变量或 android/local.properties（已忽略）

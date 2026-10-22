@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   推送本地提交到 origin/main（带自动重试）
 

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   MelodyFlow 敏感信息扫描（gitleaks）
 

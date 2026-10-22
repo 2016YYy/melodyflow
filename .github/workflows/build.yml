@@ -56,22 +56,24 @@ jobs:
           SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle.kts"
           echo "=== original settings.gradle.kts ==="
           cat "$SG"
-          cat > "$SG" <<'SGEOF'
-pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        mavenCentral()
-        google()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-SGEOF
+          {
+            echo 'pluginManagement {'
+            echo '    repositories {'
+            echo '        gradlePluginPortal()'
+            echo '        mavenCentral()'
+            echo '        google()'
+            echo '    }'
+            echo '}'
+            echo 'dependencyResolutionManagement {'
+            echo '    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)'
+            echo '    repositories {'
+            echo '        google()'
+            echo '        mavenCentral()'
+            echo '    }'
+            echo '}'
+          } > "$SG"
+          echo "=== patched settings.gradle.kts ==="
+          cat "$SG"
           echo "=== patched settings.gradle.kts ==="
           cat "$SG"
 

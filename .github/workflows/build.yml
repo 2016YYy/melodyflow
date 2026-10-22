@@ -36,6 +36,22 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch flutter_tools (remove kotlin-dsl only)
+        run: |
+          set -e
+          FLUTTER_DIR="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
+          BG="$FLUTTER_DIR/packages/flutter_tools/gradle/build.gradle.kts"
+          echo "Patching $BG"
+          cp "$BG" /tmp/build.gradle.kts.orig
+          # 仅删除 kotlin-dsl 声明行（included build 无法命中 Gradle 内置插件短路，会去仓库找不存在的 marker）
+          sed -i '/^[[:space:]]*`kotlin-dsl`[[:space:]]*$/d' "$BG"
+          echo "=== diff ==="
+          diff /tmp/build.gradle.kts.orig "$BG" || true
+          echo "=== remaining kotlin-dsl references (should be none) ==="
+          grep -n 'kotlin-dsl' "$BG" || echo "none"
+          echo "=== patched plugins block ==="
+          sed -n '1,15p' "$BG"
+
       - name: Clear gradle caches
         run: |
           rm -rf ~/.gradle/caches/modules-2 || true

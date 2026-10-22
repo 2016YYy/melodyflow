@@ -93,9 +93,17 @@ jobs:
           PLUGIN_DIR="$FLUTTER_DIR/packages/flutter_tools/gradle"
           cd "$PLUGIN_DIR"
           echo "=== building flutter_tools gradle plugin as ROOT build with system gradle ==="
-          echo "note: root build 的插件解析已由最小复现证明可用"
-          gradle build --no-daemon --stacktrace 2>&1 | tail -40
-          echo "PREBUILD_EXIT=${PIPESTATUS[0]}"
+          # 关键：把完整输出落盘再提取错误，不要用 tail -40 截断
+          #（历史上 tail -40 把真正的 Kotlin 编译错误切掉了，导致根因长期不可见）
+          gradle build --no-daemon --stacktrace > /tmp/prebuild.log 2>&1
+          PREBUILD_EXIT=$?
+          echo "PREBUILD_EXIT=$PREBUILD_EXIT"
+          if [ $PREBUILD_EXIT -ne 0 ]; then
+            echo "=== prebuild 失败：错误摘要 ==="
+            grep -E "^e: |error:|Compilation error|What went wrong|Could not|Caused by:" /tmp/prebuild.log | head -30
+            echo "=== prebuild 失败：编译错误上下文 ==="
+            grep -B2 -A6 "^e: " /tmp/prebuild.log | head -40
+          fi
           echo "=== build outputs ==="
           ls -la build/libs 2>/dev/null || echo "no build/libs"
           gradle --stop 2>&1 | tail -3 || true
@@ -106,22 +114,31 @@ jobs:
           echo "=== java ==="
           java -version 2>&1
           echo "JAVA_HOME=$JAVA_HOME"
-          echo "=== curl to plugin portal ==="
-          curl -sSI --max-time 20 https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom 2>&1 | head -5 || echo CURL_FAILED
-          echo "=== java https to plugin portal ==="
+          echo "=== curl: Google Maven (AGP 所在仓库，最关键) ==="
+          for u in \
+            "https://dl.google.com/dl/android/maven2/com/android/application/com.android.application.gradle.plugin/8.9.1/com.android.application.gradle.plugin-8.9.1.pom" \
+            "https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/8.9.1/gradle-8.9.1.pom" ; do
+            echo "--- $u"
+            curl -sSI --max-time 25 "$u" 2>&1 | head -4 || echo "CURL_FAILED: $u"
+          done
+          echo "=== curl: plugin portal / maven central ==="
+          curl -sSI --max-time 20 https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom 2>&1 | head -4 || echo CURL_FAILED
+          curl -sSI --max-time 20 https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.pom 2>&1 | head -4 || echo CURL_FAILED
+          echo "=== java https probe ==="
           cat > /tmp/HttpsProbe.java <<'JAVAEOF'
           import java.net.*;
           import javax.net.ssl.*;
           public class HttpsProbe {
             public static void main(String[] args) {
               String[] urls = {
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/8.9.1/gradle-8.9.1.pom",
                 "https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom",
-                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.20/kotlin-stdlib-2.2.20.pom"
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.pom"
               };
               for (String u : urls) {
                 try {
                   HttpsURLConnection c = (HttpsURLConnection) new URL(u).openConnection();
-                  c.setConnectTimeout(20000); c.setReadTimeout(20000);
+                  c.setConnectTimeout(25000); c.setReadTimeout(25000);
                   System.out.println("JAVA_HTTPS " + c.getResponseCode() + " " + u);
                 } catch (Exception e) {
                   System.out.println("JAVA_HTTPS_FAIL " + e.getClass().getSimpleName() + ": " + e.getMessage() + " " + u);
@@ -131,10 +148,13 @@ jobs:
           }
           JAVAEOF
           java /tmp/HttpsProbe.java 2>&1 || true
-          echo "=== gradle version + info ==="
+          echo "=== gradle version ==="
           cd android
           ./gradlew --version 2>&1 | grep -E "Gradle|JVM|Kotlin" || true
-          ./gradlew help --info 2>&1 | grep -iE "kotlin-dsl|plugins.gradle|Could not|Resource missing|ssl|proxy|UnknownHost|Connect" | head -40 || true
+          echo "=== gradle 解析 AGP 的真实错误（--info 抓取，不截断关键行）==="
+          ./gradlew help --info --stacktrace > /tmp/gradle-help.log 2>&1 || true
+          grep -iE "Could not (resolve|GET|HEAD|download)|Resource missing|dl\.google\.com|Connection reset|timed out|SSL|UnknownHost|Could not resolve plugin" /tmp/gradle-help.log | head -30 || true
+
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
@@ -152,14 +172,47 @@ jobs:
           rm -rf ~/.gradle/daemon || true
           cd ..
 
+      - name: Configure Gradle network resilience
+        run: |
+          # GitHub runner 访问 Google Maven 偶发超时/连接重置，
+          # 这里统一设置连接超时、读取超时与重试次数，避免单次网络抖动直接让整次构建失败。
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/gradle.properties <<'PROPEOF'
+          systemProp.org.gradle.internal.http.connectionTimeout=120000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.repository.max.retries=10
+          systemProp.org.gradle.internal.repository.initial.backoff=1000
+          systemProp.org.gradle.internal.http.retry.max=10
+          org.gradle.daemon=true
+          org.gradle.parallel=false
+          org.gradle.caching=true
+          PROPEOF
+          echo "=== ~/.gradle/gradle.properties ==="
+          cat ~/.gradle/gradle.properties
+          # 预热 Google Maven 连通性：若此处失败说明 runner 到 Google Maven 不通，
+          # 后续构建必然失败，直接给出明确结论而不是让 Gradle 报模糊的"plugin not found"
+          echo "=== warm-up: Google Maven ==="
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+              "https://dl.google.com/dl/android/maven2/com/android/application/com.android.application.gradle.plugin/8.9.1/com.android.application.gradle.plugin-8.9.1.pom" || echo "000")
+            echo "  attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then echo "  Google Maven 可达"; break; fi
+            sleep $((i*10))
+          done
+
       - name: Build APK
         run: |
           set +e
           flutter build apk --release 2>&1 | tee /tmp/apk-build.log
           STATUS=${PIPESTATUS[0]}
           if [ $STATUS -ne 0 ]; then
-            echo "=== build failed: plugin/network context ==="
-            grep -iE "kotlin-dsl|plugins.gradle|could not|not found|resolved plugin|ssl|proxy|offline|daemon" /tmp/apk-build.log | head -40
+            echo "=== build failed: 完整错误上下文 ==="
+            # 输出真实失败原因（Gradle 默认只给 'plugin not found' 这类模糊信息）
+            grep -B5 -A20 "What went wrong" /tmp/apk-build.log | head -60
+            echo "=== 网络类错误线索 ==="
+            grep -iE "Could not (resolve|GET|HEAD|download)|Resource missing|dl\.google\.com|Connection reset|timed out|SSLHandshake|UnknownHost|No route to host" /tmp/apk-build.log | head -20 || true
+            echo "=== 插件解析相关 ==="
+            grep -iE "not found in any of the following sources|Searched in the following" /tmp/apk-build.log | head -10 || true
           fi
           exit $STATUS
         env:
@@ -167,6 +220,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GRADLE_OPTS: -Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000 -Dorg.gradle.internal.repository.max.retries=10
 
       - name: Calculate SHA-256
         run: |

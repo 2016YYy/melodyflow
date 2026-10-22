@@ -21,48 +21,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.44.9'
           channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
-      - name: Remove kotlin-dsl plugin from flutter_tools gradle build
-        run: |
-          FLUTTER_DIR="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
-          BG="$FLUTTER_DIR/packages/flutter_tools/gradle/build.gradle.kts"
-          echo "Patching $BG"
-          sed -i '/kotlin-dsl/d; s/kotlin("jvm") version "2.2.20"/kotlin("jvm") version "2.1.20"/' "$BG"
-          SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle.kts"
-          cat > "$SG" <<'EOF'
-          pluginManagement {
-              repositories {
-                  gradlePluginPortal()
-                  google()
-                  mavenCentral()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-          echo "settings.gradle.kts patched:"
-          cat "$SG"
-          grep -n 'kotlin-dsl' "$BG" || echo "kotlin-dsl line removed OK"
 
-      - name: Diagnose gradle kotlin-dsl resolution
+      - name: Diagnose network and java TLS
         run: |
-          env | grep -i -E 'proxy|mirror|gradle' || true
-          curl -sSI https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom 2>&1 | head -12 || echo CURL_FAILED
+          echo "=== java ==="
+          java -version 2>&1
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "=== curl to plugin portal ==="
+          curl -sSI --max-time 20 https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom 2>&1 | head -5 || echo CURL_FAILED
+          echo "=== java https to plugin portal ==="
+          cat > /tmp/HttpsProbe.java <<'JAVAEOF'
+          import java.net.*;
+          import javax.net.ssl.*;
+          public class HttpsProbe {
+            public static void main(String[] args) {
+              String[] urls = {
+                "https://plugins.gradle.org/m2/org/gradle/kotlin/kotlin-dsl/org.gradle.kotlin.kotlin-dsl.gradle.plugin/5.2.0/org.gradle.kotlin.kotlin-dsl.gradle.plugin-5.2.0.pom",
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.20/kotlin-stdlib-2.2.20.pom"
+              };
+              for (String u : urls) {
+                try {
+                  HttpsURLConnection c = (HttpsURLConnection) new URL(u).openConnection();
+                  c.setConnectTimeout(20000); c.setReadTimeout(20000);
+                  System.out.println("JAVA_HTTPS " + c.getResponseCode() + " " + u);
+                } catch (Exception e) {
+                  System.out.println("JAVA_HTTPS_FAIL " + e.getClass().getSimpleName() + ": " + e.getMessage() + " " + u);
+                }
+              }
+            }
+          }
+          JAVAEOF
+          java /tmp/HttpsProbe.java 2>&1 || true
+          echo "=== gradle version + info ==="
           cd android
-          ./gradlew --version | head -20 || true
-          ./gradlew help --stacktrace 2>&1 | grep -B2 -A 25 'What went wrong' || true
+          ./gradlew --version 2>&1 | grep -E "Gradle|JVM|Kotlin" || true
+          ./gradlew help --info 2>&1 | grep -iE "kotlin-dsl|plugins.gradle|Could not|Resource missing|ssl|proxy|UnknownHost|Connect" | head -40 || true
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
@@ -106,7 +113,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.44.9'
           channel: 'stable'
 
       - name: Install dependencies
@@ -134,7 +141,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.44.9'
           channel: 'stable'
 
       - name: Install dependencies

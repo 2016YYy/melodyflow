@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -23,7 +25,12 @@ android {
             val keystorePath = System.getenv("KEYSTORE_PATH") ?: "melodyflow-release.jks"
             val keystoreFile = file(keystorePath)
 
-            val localProps = java.util.Properties().apply {
+            // 注意：此处用 Properties() 而非 java.util.Properties()。
+            // 在 .gradle.kts 脚本中，`java` 会被解析为 Gradle 的 java 扩展
+            // （JavaPluginExtension）而非 java 包名，导致
+            // "Unresolved reference: util"，并连带使 load()/isNotBlank() 无法解析。
+            // 顶部已通过 import java.util.Properties 显式引入。
+            val localProps = Properties().apply {
                 val f = rootProject.file("local.properties")
                 if (f.exists()) f.inputStream().use { load(it) }
             }

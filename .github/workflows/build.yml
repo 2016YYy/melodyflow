@@ -51,6 +51,29 @@ jobs:
           grep -n 'kotlin-dsl' "$BG" || echo "none"
           echo "=== patched plugins block ==="
           sed -n '1,15p' "$BG"
+          # included build 缺少 pluginManagement，默认仅 gradlePluginPortal；
+          # 显式加入 Maven Central（kotlin jvm marker 在其上确认存在）
+          SG="$FLUTTER_DIR/packages/flutter_tools/gradle/settings.gradle.kts"
+          echo "=== original settings.gradle.kts ==="
+          cat "$SG"
+          cat > "$SG" <<'SGEOF'
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+        google()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+SGEOF
+          echo "=== patched settings.gradle.kts ==="
+          cat "$SG"
 
       - name: Clear gradle caches
         run: |

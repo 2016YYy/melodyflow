@@ -45,6 +45,9 @@ jobs:
           cp "$BG" /tmp/build.gradle.kts.orig
           # 仅删除 kotlin-dsl 声明行（included build 无法命中 Gradle 内置插件短路，会去仓库找不存在的 marker）
           sed -i '/^[[:space:]]*`kotlin-dsl`[[:space:]]*$/d' "$BG"
+          # Kotlin JVM 插件版本改为 2.4.10：该版本已在本 job 的最小复现中
+          # 被 Gradle 成功从插件仓库下载（2.2.20 在此环境反复解析失败）
+          sed -i 's/kotlin("jvm") version "2.2.20"/kotlin("jvm") version "2.4.10"/' "$BG"
           echo "=== diff ==="
           diff /tmp/build.gradle.kts.orig "$BG" || true
           echo "=== remaining kotlin-dsl references (should be none) ==="

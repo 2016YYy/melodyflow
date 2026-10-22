@@ -1,0 +1,9 @@
+# 可选：使用 pre-commit 框架的提交前扫描（与 .githooks/pre-commit 二选一或并存）
+# 启用：
+#   pip install pre-commit
+#   pre-commit install
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

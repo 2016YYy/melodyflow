@@ -15,15 +15,37 @@ android {
     }
 
     // 统一签名配置 - 后续所有版本使用同一签名，确保更新可用
+    // 安全要求：仓库内不保存任何签名口令。口令来源优先级：
+    //   1) 环境变量（CI Secrets：KEYSTORE_PASSWORD / KEY_PASSWORD / KEY_ALIAS）
+    //   2) android/local.properties（本地开发，已被 .gitignore 忽略）
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH") ?: "melodyflow-release.jks"
             val keystoreFile = file(keystorePath)
+
+            val localProps = java.util.Properties().apply {
+                val f = rootProject.file("local.properties")
+                if (f.exists()) f.inputStream().use { load(it) }
+            }
+            fun secret(envKey: String, propKey: String): String? =
+                System.getenv(envKey)?.takeIf { it.isNotBlank() }
+                    ?: localProps.getProperty(propKey)?.takeIf { it.isNotBlank() }
+
             if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias = System.getenv("KEY_ALIAS") ?: "melodyflow"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+                val storePwd = secret("KEYSTORE_PASSWORD", "keystore.storePassword")
+                val keyPwd = secret("KEY_PASSWORD", "keystore.keyPassword")
+                if (storePwd != null && keyPwd != null) {
+                    storeFile = keystoreFile
+                    storePassword = storePwd
+                    keyAlias = secret("KEY_ALIAS", "keystore.keyAlias") ?: "melodyflow"
+                    keyPassword = keyPwd
+                } else {
+                    logger.warn(
+                        "未配置签名口令：请设置环境变量 KEYSTORE_PASSWORD / KEY_PASSWORD，" +
+                            "或在 android/local.properties 中配置 keystore.storePassword / keystore.keyPassword。" +
+                            "本次 release 将使用 debug 签名（可安装，但无法覆盖升级已发布版本）。"
+                    )
+                }
             }
         }
     }

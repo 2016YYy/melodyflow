@@ -1,0 +1,75 @@
+# MelodyFlow 敏感信息扫描配置（gitleaks）
+# 用法：gitleaks git -c .gitleaks.toml -v      # 扫描全部历史
+#       gitleaks dir -c .gitleaks.toml -v      # 扫描工作区文件
+#       gitleaks git --staged --pre-commit -c .gitleaks.toml -v   # 提交前扫描暂存区
+
+title = "MelodyFlow secret scanning config"
+
+[extend]
+# 继承 gitleaks 官方默认规则集（AWS/GCP/GitHub Token/私钥/通用 API Key 等）
+useDefault = true
+
+[allowlist]
+description = "项目内允许的非敏感路径与已知假阳性"
+
+# 排除二进制、构建产物、签名文件、第三方缓存：这些不是源码且体积大
+paths = [
+  '''(?i)\.apk$''',
+  '''(?i)\.aab$''',
+  '''(?i)\.ipa$''',
+  '''(?i)\.zip$''',
+  '''(?i)\.jks$''',
+  '''(?i)\.keystore$''',
+  '''(?i)\.jks\.b64$''',
+  '''(?i)\.sha256$''',
+  '''(?i)gradle-wrapper\.jar$''',
+  '''(?i)pubspec\.lock$''',
+  '''(^|/)build/''',
+  '''(^|/)\.dart_tool/''',
+  '''(^|/)\.gradle/''',
+  '''(^|/)_backup/''',
+  '''(^|/)_fhome/''',
+  '''(^|/)_apkverify/''',
+  '''(^|/)_ksverify[0-9]*/''',
+  '''(^|/)node_modules/''',
+]
+
+# 已知假阳性：仅限真正无风险的固定字面量（谨慎添加，宁可误报也不掩盖真实泄露）
+regexes = [
+  # Flutter/Gradle 模板中的占位符，非真实凭据
+  '''storePassword\s*=\s*"\$\{?[A-Za-z_]+\}?"''',
+  '''keyPassword\s*=\s*"\$\{?[A-Za-z_]+\}?"''',
+  # 文档中"见本地说明"这类无值描述
+  '''(密码|口令)\s*[:：|]\s*见''',
+]
+
+# ===== 自定义规则：本项目曾出现的泄露类型 =====
+
+# Android 签名口令被写成明文默认值（如 storePassword = "xxxxx"）
+[[rules]]
+id = "android-keystore-password-literal"
+description = "Android 密钥库口令明文赋值"
+# 引号内必须是连续的口令字符集（排除 " + $var 这类变量拼接写法）
+regex = '''(?i)(store|key)_?password\s*[:=]\s*"([A-Za-z0-9@#\$%^&*!_.\-]{4,})"'''
+keywords = ["storepassword", "keypassword"]
+
+# 中文文档/脚本中直接写出明文口令
+[[rules]]
+id = "plaintext-password-in-doc"
+description = "文档或脚本中出现明文口令"
+regex = '''(?i)(密码|口令)\s*[:：|]\s*[`"']?([A-Za-z0-9@#$%^&*_\-]{6,})[`"']?'''
+keywords = ["密码", "口令"]
+
+# 签名口令以默认值/回退字面量形式出现（如 storePassword = env ?: "xxxx"）
+[[rules]]
+id = "keystore-password-fallback-literal"
+description = "签名口令以默认值形式硬编码"
+regex = '''(?i)(store|key)_?password\s*=.*\?:\s*"[^"]{4,}"'''
+keywords = ["storepassword", "keypassword"]
+
+# 发布脚本直接打印 Secret 值（口令泄露高风险写法）
+[[rules]]
+id = "hardcoded-ci-secret"
+description = "脚本中硬编码 CI Secret 值"
+regex = '''(?i)(KEYSTORE_PASSWORD|KEY_PASSWORD)\s*=\s*([A-Za-z0-9@#$%^&*_\-]{6,})'''
+keywords = ["keystore_password", "key_password"]

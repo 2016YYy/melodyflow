@@ -1,0 +1,19 @@
+# gitleaks 忽略清单（保留审计记录）
+#
+# 用途：记录"已知且已处置"的历史泄露指纹，避免 CI 因历史提交持续失败。
+# 格式：<commit>:<file>:<rule>:<line>
+#
+# 背景（2026-10-22）：
+#   以下全部命中的都是【历史提交】中的明文签名口令，当时尚未接入扫描。
+#   处置：密钥库口令已于 2026-10-22 更换（旧口令失效），当前 HEAD 与工作区已无泄露。
+#   由于历史不可变（重写历史会破坏 tags/Releases），此处按指纹归档，保留完整审计痕迹。
+#   新增泄露不应加入本文件——应修复代码。
+#
+# 重新审计：gitleaks git -c .gitleaks.toml -v --log-opts="--all"
+5405b8e77038a6a1031e48056630cc5e497b1747:docs/signing-verification.md:plaintext-password-in-doc:24
+5405b8e77038a6a1031e48056630cc5e497b1747:scripts/release-v1.7.0.ps1:hardcoded-ci-secret:26
+5405b8e77038a6a1031e48056630cc5e497b1747:scripts/release-v1.7.0.ps1:hardcoded-ci-secret:28
+59f41ef3f098c840d5848e1182eb0856deb7c617:scripts/release-v1.7.0.ps1:hardcoded-ci-secret:26
+59f41ef3f098c840d5848e1182eb0856deb7c617:scripts/release-v1.7.0.ps1:hardcoded-ci-secret:28
+3db9d4edc599b63a51b57bc494f27feffb082928:android/app/build.gradle.kts:keystore-password-fallback-literal:24
+3db9d4edc599b63a51b57bc494f27feffb082928:android/app/build.gradle.kts:keystore-password-fallback-literal:26

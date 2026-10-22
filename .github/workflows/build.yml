@@ -36,6 +36,32 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Clear gradle caches
+        run: |
+          rm -rf ~/.gradle/caches/modules-2 || true
+          rm -rf ~/.gradle/caches/jars-* || true
+          ls ~/.gradle/caches 2>/dev/null || echo "no gradle caches"
+
+      - name: Minimal gradle plugin repro
+        run: |
+          set +e
+          WORK=/tmp/gradle-minimal
+          mkdir -p "$WORK"
+          cd "$WORK"
+          echo 'rootProject.name = "minimal"' > settings.gradle.kts
+          cat > build.gradle.kts <<'GEOF'
+          plugins {
+              `java-gradle-plugin`
+              `kotlin-dsl`
+          }
+          GEOF
+          echo "=== minimal build.gradle.kts ==="
+          cat build.gradle.kts
+          echo "=== run system gradle with stacktrace ==="
+          gradle build --stacktrace --info 2>&1 | grep -iE "kotlin-dsl|plugins.gradle|could not|ssl|proxy|UnknownHost|resolv" | head -30
+          echo "MINIMAL_EXIT=${PIPESTATUS[0]}"
+          cd /
+
       - name: Diagnose network and java TLS
         run: |
           echo "=== java ==="
@@ -106,6 +132,7 @@ jobs:
 
   build-windows:
     name: Build Windows
+    if: ${{ false }}   # 临时禁用：集中排查 Android
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,6 +161,7 @@ jobs:
 
   build-ios:
     name: Build iOS IPA
+    if: ${{ false }}   # 临时禁用：集中排查 Android
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

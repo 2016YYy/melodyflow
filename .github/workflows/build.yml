@@ -36,6 +36,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Clear gradle caches
+        run: |
+          rm -rf ~/.gradle/caches/modules-2 || true
+          rm -rf ~/.gradle/caches/jars-* || true
+          ls ~/.gradle/caches 2>/dev/null || echo "no gradle caches"
+
       - name: Patch flutter_tools (remove kotlin-dsl only)
         run: |
           set -e
@@ -80,11 +86,19 @@ jobs:
           echo "=== patched settings.gradle.kts ==="
           cat "$SG"
 
-      - name: Clear gradle caches
+      - name: Pre-build flutter_tools gradle plugin (root build)
         run: |
-          rm -rf ~/.gradle/caches/modules-2 || true
-          rm -rf ~/.gradle/caches/jars-* || true
-          ls ~/.gradle/caches 2>/dev/null || echo "no gradle caches"
+          set +e
+          FLUTTER_DIR="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
+          PLUGIN_DIR="$FLUTTER_DIR/packages/flutter_tools/gradle"
+          cd "$PLUGIN_DIR"
+          echo "=== building flutter_tools gradle plugin as ROOT build with system gradle ==="
+          echo "note: root build 的插件解析已由最小复现证明可用"
+          gradle build --no-daemon --stacktrace 2>&1 | tail -40
+          echo "PREBUILD_EXIT=${PIPESTATUS[0]}"
+          echo "=== build outputs ==="
+          ls -la build/libs 2>/dev/null || echo "no build/libs"
+          cd /
 
       - name: Minimal gradle plugin repro
         run: |

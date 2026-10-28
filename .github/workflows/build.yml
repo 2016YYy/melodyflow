@@ -39,14 +39,16 @@ jobs:
       # 因此这里显式安装，保证构建环境自足。
       - name: Install Android NDK
         run: |
-          NDK_VER="27.0.12077973"
+          set +e
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
           echo "SDK_ROOT=$SDK_ROOT"
-          if [ -d "$SDK_ROOT/ndk/$NDK_VER" ]; then
-            echo "NDK $NDK_VER already installed"
-            ls "$SDK_ROOT/ndk"
-            exit 0
-          fi
+          echo "FLUTTER_ROOT=$FLUTTER_ROOT"
+          # app/build.gradle.kts 里 ndkVersion = flutter.ndkVersion，而 Flutter 各版本
+          # 声明的 NDK 版本并不相同（FlutterExtension.ndkVersion）。硬编码单一版本可能装的
+          # 不是 AGP 真正去 $SDK/ndk/<version> 里找的那个版本，所以直接从 Flutter SDK 源码里
+          # 读出来，再和 AGP 8.9 的默认值一起保证安装。
+          FLUTTER_NDK="$(grep -rhoE 'ndkVersion[^=]{0,40}= *"[0-9.]+"' "$FLUTTER_ROOT/packages/flutter_tools/gradle" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          echo "Flutter 声明的 NDK 版本 = ${FLUTTER_NDK:-<未探测到>}"
           SDKMGR="$(command -v sdkmanager || true)"
           if [ -z "$SDKMGR" ]; then
             for c in "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/cmdline-tools/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"; do
@@ -59,15 +61,27 @@ jobs:
             exit 1
           fi
           echo "using sdkmanager: $SDKMGR"
-          # yes 在被管道关闭时会收到 SIGPIPE，其退出码不可依赖；最终以目录是否存在为准
-          yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$NDK_VER" > /tmp/ndk-install.log 2>&1 || true
-          tail -6 /tmp/ndk-install.log || true
-          if [ -d "$SDK_ROOT/ndk/$NDK_VER" ]; then
-            echo "NDK ready: $SDK_ROOT/ndk/$NDK_VER"
-            ls "$SDK_ROOT/ndk"
-          else
-            echo "ERROR: NDK $NDK_VER install failed"
-            tail -60 /tmp/ndk-install.log || true
+          for V in "$FLUTTER_NDK" "27.0.12077973"; do
+            [ -z "$V" ] && continue
+            if [ -d "$SDK_ROOT/ndk/$V" ]; then
+              echo "NDK $V 已存在，跳过"
+              continue
+            fi
+            echo "=== 安装 NDK $V ==="
+            # yes 在被管道关闭时会收到 SIGPIPE，其退出码不可依赖；最终以目录是否存在为准
+            yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$V" > "/tmp/ndk-install-$V.log" 2>&1 || true
+            tail -4 "/tmp/ndk-install-$V.log" || true
+            if [ -d "$SDK_ROOT/ndk/$V" ]; then
+              echo "NDK ready: $SDK_ROOT/ndk/$V"
+            else
+              echo "WARN: NDK $V 安装失败"
+              tail -20 "/tmp/ndk-install-$V.log" || true
+            fi
+          done
+          echo "=== 最终 NDK 目录 ==="
+          ls -la "$SDK_ROOT/ndk" || true
+          if ! ls "$SDK_ROOT/ndk" >/dev/null 2>&1; then
+            echo "ERROR: SDK 下没有任何 NDK"
             exit 1
           fi
 
@@ -252,6 +266,23 @@ jobs:
             if [ "$code" = "200" ]; then echo "  Google Maven 可达"; break; fi
             sleep $((i*10))
           done
+
+      - name: Diagnose NDK resolution
+        run: |
+          set +e
+          echo "=== Flutter 侧 ndkVersion 声明 ==="
+          grep -rn "ndkVersion" "$FLUTTER_ROOT/packages/flutter_tools/gradle/src" 2>/dev/null | head -10
+          echo "=== SDK ndk 目录 ==="
+          ls -la "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk" 2>/dev/null
+          echo "=== Flutter 模板 android/app/build.gradle.kts 里的 ndk 行 ==="
+          grep -n "ndkVersion" android/app/build.gradle.kts || true
+          echo "=== Gradle 配置 :app 的真实堆栈（grep NDK 相关帧）==="
+          cd android
+          ./gradlew help --stacktrace --no-daemon > /tmp/ndk-diag.log 2>&1
+          grep -nE "NDK not configured|ndkVersion|NdkLocator|NdkHandler|Caused by|at com\.android" /tmp/ndk-diag.log | head -40
+          echo "=== 若有 NDK 报错，输出其上下文 ==="
+          grep -B3 -A25 "NDK not configured" /tmp/ndk-diag.log | head -60
+          cd ..
 
       - name: Build APK
         run: |

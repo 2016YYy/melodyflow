@@ -72,7 +72,17 @@ jobs:
           fi
 
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "resolved SDK_ROOT=$SDK_ROOT"
+          # 显式锁定 Android SDK，避免 flutter 自行探测到别的 SDK 目录后，
+          # 把错误的 sdk.dir 写进 android/local.properties，导致 AGP 在该 SDK 下找不到 NDK。
+          flutter config --android-sdk "$SDK_ROOT" || true
+          flutter pub get
+          echo "=== android/local.properties（flutter 写入的 sdk.dir 决定 AGP 去哪找 NDK）==="
+          cat android/local.properties || true
 
       - name: Clear gradle caches
         run: |
@@ -256,6 +266,18 @@ jobs:
             grep -iE "Could not (resolve|GET|HEAD|download)|Resource missing|dl\.google\.com|Connection reset|timed out|SSLHandshake|UnknownHost|No route to host" /tmp/apk-build.log | head -20 || true
             echo "=== 插件解析相关 ==="
             grep -iE "not found in any of the following sources|Searched in the following" /tmp/apk-build.log | head -10 || true
+            echo "=== NDK / SDK 诊断 ==="
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+            echo "--- android/local.properties ---"
+            cat android/local.properties || true
+            echo "--- ${ANDROID_HOME}/ndk ---"
+            ls -la "${ANDROID_HOME}/ndk" 2>/dev/null || true
+            echo "--- 已安装 NDK 的 source.properties ---"
+            find "${ANDROID_HOME}" -maxdepth 3 -name source.properties 2>/dev/null | head -10 || true
+            echo "--- app/build.gradle.kts 中 ndk 相关行 ---"
+            grep -n "ndk" android/app/build.gradle.kts || true
           fi
           exit $STATUS
         env:

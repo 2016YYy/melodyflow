@@ -47,7 +47,9 @@ jobs:
           # 声明的 NDK 版本并不相同（FlutterExtension.ndkVersion）。硬编码单一版本可能装的
           # 不是 AGP 真正去 $SDK/ndk/<version> 里找的那个版本，所以直接从 Flutter SDK 源码里
           # 读出来，再和 AGP 8.9 的默认值一起保证安装。
-          FLUTTER_NDK="$(grep -rhoE 'ndkVersion[^=]{0,40}= *"[0-9.]+"' "$FLUTTER_ROOT/packages/flutter_tools/gradle" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          # 只看 src/main：src/test 里也有 ndkVersion 常量（例如 26.3.11579264），
+          # 读到测试值会装错版本。
+          FLUTTER_NDK="$(grep -rhoE 'ndkVersion[^=]{0,60}= *"[0-9.]+"' "$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
           echo "Flutter 声明的 NDK 版本 = ${FLUTTER_NDK:-<未探测到>}"
           SDKMGR="$(command -v sdkmanager || true)"
           if [ -z "$SDKMGR" ]; then
@@ -183,7 +185,10 @@ jobs:
           echo "=== building flutter_tools gradle plugin as ROOT build with system gradle ==="
           # 关键：把完整输出落盘再提取错误，不要用 tail -40 截断
           #（历史上 tail -40 把真正的 Kotlin 编译错误切掉了，导致根因长期不可见）
-          gradle build --no-daemon --stacktrace > /tmp/prebuild.log 2>&1
+          # 只构建主产物 jar：历史上用 \`gradle build\` 会连带执行 compileTestKotlin 与
+          # validatePlugins，而 Flutter SDK 自带的测试源码在离线/无 junit 依赖环境下必然编译失败，
+          # 会把这个"预热"步骤本身变成失败源，掩盖真正的项目构建问题。
+          gradle jar --no-daemon --stacktrace > /tmp/prebuild.log 2>&1
           PREBUILD_EXIT=$?
           echo "PREBUILD_EXIT=$PREBUILD_EXIT"
           if [ $PREBUILD_EXIT -ne 0 ]; then

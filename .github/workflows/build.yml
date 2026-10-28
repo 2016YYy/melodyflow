@@ -63,15 +63,17 @@ jobs:
           echo "using sdkmanager: $SDKMGR"
           for V in "$FLUTTER_NDK" "27.0.12077973"; do
             [ -z "$V" ] && continue
-            if [ -d "$SDK_ROOT/ndk/$V" ]; then
-              echo "NDK $V 已存在，跳过"
+            if [ -f "$SDK_ROOT/ndk/$V/source.properties" ]; then
+              echo "NDK $V 已存在且已注册，跳过"
               continue
             fi
+            # 目录存在但没有 source.properties 说明上次安装不完整，AGP 不会认它
+            rm -rf "$SDK_ROOT/ndk/$V" 2>/dev/null || true
             echo "=== 安装 NDK $V ==="
             # yes 在被管道关闭时会收到 SIGPIPE，其退出码不可依赖；最终以目录是否存在为准
             yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$V" > "/tmp/ndk-install-$V.log" 2>&1 || true
             tail -4 "/tmp/ndk-install-$V.log" || true
-            if [ -d "$SDK_ROOT/ndk/$V" ]; then
+            if [ -f "$SDK_ROOT/ndk/$V/source.properties" ]; then
               echo "NDK ready: $SDK_ROOT/ndk/$V"
             else
               echo "WARN: NDK $V 安装失败"
@@ -80,10 +82,31 @@ jobs:
           done
           echo "=== 最终 NDK 目录 ==="
           ls -la "$SDK_ROOT/ndk" || true
-          if ! ls "$SDK_ROOT/ndk" >/dev/null 2>&1; then
-            echo "ERROR: SDK 下没有任何 NDK"
+          echo "=== 注册状态检查（AGP 只认带 source.properties 的 NDK 目录）==="
+          for d in "$SDK_ROOT"/ndk/*/; do
+            v="$(basename "$d")"
+            if [ -f "$d/source.properties" ]; then
+              echo "  OK   $v -> $(grep -E '^Pkg.Revision' "$d/source.properties" | head -1)"
+            else
+              echo "  BAD  $v 缺少 source.properties（AGP 会视为未安装）"
+            fi
+          done
+          CHOSEN=""
+          for cand in "$FLUTTER_NDK" "27.0.12077973" "27.3.13750724"; do
+            [ -z "$cand" ] && continue
+            if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
+          done
+          if [ -z "$CHOSEN" ]; then
+            for d in "$SDK_ROOT"/ndk/*/; do
+              if [ -f "$d/source.properties" ]; then CHOSEN="$(basename "$d")"; break; fi
+            done
+          fi
+          if [ -z "$CHOSEN" ]; then
+            echo "ERROR: SDK 下没有任何已注册的 NDK"
             exit 1
           fi
+          echo "选用 NDK 版本: $CHOSEN"
+          echo "MELODYFLOW_NDK_VERSION=$CHOSEN" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -270,6 +293,7 @@ jobs:
       - name: Diagnose NDK resolution
         run: |
           set +e
+          echo "MELODYFLOW_NDK_VERSION=$MELODYFLOW_NDK_VERSION"
           echo "=== Flutter 侧 ndkVersion 声明 ==="
           grep -rn "ndkVersion" "$FLUTTER_ROOT/packages/flutter_tools/gradle/src" 2>/dev/null | head -10
           echo "=== SDK ndk 目录 ==="

@@ -33,6 +33,44 @@ jobs:
           flutter-version: '3.44.9'
           channel: 'stable'
 
+      # app/build.gradle.kts 里 ndkVersion = flutter.ndkVersion（Flutter 3.44.9 对应
+      # 27.0.12077973）。runner 镜像不保证预装该版本，缺失时 AGP 在配置 :app 阶段直接报
+      # "NDK not configured. Download it with SDK manager. Preferred NDK version is '27.0.12077973'."
+      # 因此这里显式安装，保证构建环境自足。
+      - name: Install Android NDK
+        run: |
+          NDK_VER="27.0.12077973"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
+          echo "SDK_ROOT=$SDK_ROOT"
+          if [ -d "$SDK_ROOT/ndk/$NDK_VER" ]; then
+            echo "NDK $NDK_VER already installed"
+            ls "$SDK_ROOT/ndk"
+            exit 0
+          fi
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            for c in "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/cmdline-tools/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"; do
+              if [ -x "$c" ]; then SDKMGR="$c"; break; fi
+            done
+          fi
+          if [ -z "$SDKMGR" ]; then
+            echo "ERROR: sdkmanager not found under $SDK_ROOT"
+            ls -la "$SDK_ROOT" || true
+            exit 1
+          fi
+          echo "using sdkmanager: $SDKMGR"
+          # yes 在被管道关闭时会收到 SIGPIPE，其退出码不可依赖；最终以目录是否存在为准
+          yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$NDK_VER" > /tmp/ndk-install.log 2>&1 || true
+          tail -6 /tmp/ndk-install.log || true
+          if [ -d "$SDK_ROOT/ndk/$NDK_VER" ]; then
+            echo "NDK ready: $SDK_ROOT/ndk/$NDK_VER"
+            ls "$SDK_ROOT/ndk"
+          else
+            echo "ERROR: NDK $NDK_VER install failed"
+            tail -60 /tmp/ndk-install.log || true
+            exit 1
+          fi
+
       - name: Install dependencies
         run: flutter pub get
 

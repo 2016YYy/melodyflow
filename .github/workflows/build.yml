@@ -130,35 +130,31 @@ jobs:
           # 把错误的 sdk.dir 写进 android/local.properties，导致 AGP 在该 SDK 下找不到 NDK。
           flutter config --android-sdk "$SDK_ROOT" || true
           flutter pub get
-          # local.properties 必须指向同一个 SDK，否则 AGP 会在别处找 NDK。
-          # flutter 自动生成的 local.properties 只保证 sdk.dir + flutter.sdk，
-          # 它可能被本仓库 .gitignore 忽略、也可能被 flutter 覆盖，这里显式补全。
+          # 只写 sdk.dir，【绝不写 ndk.dir】：
+          # 之前这里写过 ndk.dir=$SDK_ROOT/ndk/$NDK_PIN，结果日志里读回来的是
+          #     ndk.dir=/usr/local/lib/android/sdk/ndk/
+          # 版本段丢了，AGP 的 NdkLocator 拿到这个目录当 NDK 根，直接报
+          #     [CXX1101] NDK at /usr/local/lib/android/sdk/ndk did not have a source.properties file
+          # 而 sdk/ndk 下 27.3/28.2/29/30 四个版本全都有 source.properties（同一次日志可证），
+          # 所以 CXX1101 说的"缺文件"是被误导后的假象。AGP 扫 sdk.dir/ndk 时按版本目录解析，
+          # 只要 flutter.ndkVersion 对应的 28.2.13676358 已注册就能命中，反而更稳。
+          NDK_PIN="${MELODYFLOW_NDK_VERSION:-}"
+          echo "MELODYFLOW_NDK_VERSION=$NDK_PIN"
+          if [ -n "$NDK_PIN" ] && [ ! -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
+            echo "WARN: NDK $NDK_PIN 缺少 source.properties，AGP 可能报 CXX1101"
+          fi
           FLUTTER_BIN="$(readlink -f "$(command -v flutter)")"
           FLUTTER_DIR="$(dirname "$(dirname "$FLUTTER_BIN")")"
-          # NDK 版本必须在这里重新取一次：NDK_PIN 是【上一步】run 脚本里的局部变量，
-          # 跨 step 不会保留，只有写进 $GITHUB_ENV 的 MELODYFLOW_NDK_VERSION 能传过来。
-          # 之前直接引用 $NDK_PIN，写出来的就是 "ndk.dir=/usr/local/lib/android/sdk/ndk/"，
-          # AGP 拿这个目录当 NDK 根，报 [CXX1101] NDK at .../ndk did not have a source.properties file。
-          NDK_PIN="${MELODYFLOW_NDK_VERSION:-}"
-          if [ -z "$NDK_PIN" ]; then
-            echo "ERROR: MELODYFLOW_NDK_VERSION 为空，上一步 Install Android NDK 未生效"
-            exit 1
-          fi
-          if [ ! -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
-            echo "ERROR: NDK $NDK_PIN 缺少 source.properties，拒绝写入 ndk.dir"
-            ls -la "$SDK_ROOT/ndk" || true
-            exit 1
-          fi
-          echo "local.properties 将写入 ndk.dir=$SDK_ROOT/ndk/$NDK_PIN"
           {
             echo "sdk.dir=$SDK_ROOT"
             echo "flutter.sdk=$FLUTTER_DIR"
-            echo "# NDK 显式路径：AGP 的 NdkLocator 优先读 android.ndkPath / ndk.dir，"
-            echo "# 找不到才去扫 sdk/ndk。注意 ndk.dir 必须指到具体版本目录，指到 ndk/ 会报 CXX1101。"
-            echo "ndk.dir=$SDK_ROOT/ndk/$NDK_PIN"
           } > android/local.properties
-          echo "=== android/local.properties ==="
+          echo "=== android/local.properties（不含 ndk.dir）==="
           cat android/local.properties
+          echo "=== SDK 内已注册的 NDK 版本 ==="
+          for d in "$SDK_ROOT"/ndk/*/; do
+            if [ -f "$d/source.properties" ]; then echo "  OK   $(basename "$d")"; else echo "  BAD  $(basename "$d")"; fi
+          done
 
       - name: Clear gradle caches
         run: |

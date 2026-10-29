@@ -198,9 +198,9 @@ jobs:
           cat "$SG"
 
 
-      - name: Pre-build flutter_tools gradle plugin (root build)
+      - name: Pre-warm flutter_tools gradle plugin deps (非阻塞，失败不中断)
+        continue-on-error: true
         run: |
-          set +e
           FLUTTER_DIR="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
           PLUGIN_DIR="$FLUTTER_DIR/packages/flutter_tools/gradle"
           cd "$PLUGIN_DIR"
@@ -210,9 +210,8 @@ jobs:
           # 只构建主产物 jar：历史上用 \`gradle build\` 会连带执行 compileTestKotlin 与
           # validatePlugins，而 Flutter SDK 自带的测试源码在离线/无 junit 依赖环境下必然编译失败，
           # 会把这个"预热"步骤本身变成失败源，掩盖真正的项目构建问题。
-          gradle jar --no-daemon --stacktrace > /tmp/prebuild.log 2>&1
+          timeout 240 gradle jar --no-daemon --offline > /tmp/prebuild.log 2>&1 || timeout 240 gradle jar --no-daemon > /tmp/prebuild.log 2>&1
           PREBUILD_EXIT=$?
-          echo "PREBUILD_EXIT=$PREBUILD_EXIT"
           if [ $PREBUILD_EXIT -ne 0 ]; then
             echo "=== prebuild 失败：错误摘要 ==="
             grep -E "^e: |error:|Compilation error|What went wrong|Could not|Caused by:" /tmp/prebuild.log | head -30

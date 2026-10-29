@@ -43,16 +43,13 @@ val ndkVersionOverride: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeI
 // 插件传递引入）会在自己的 android {} 里把 ndkVersion 设成插件作者的版本，
 // 于是 root 早先的设置被覆盖回去，AGP 在配置 :jni 阶段报
 // "NDK not configured. Preferred NDK version is ..."，与 :app 无关。
-// 但只挂 afterEvaluate 也不够 —— :app 被提前评估时回调来得太晚，
-// 直接 afterEvaluate 会抛"项目已评估"错误。所以两件事一起处理：
-//   · 只有 plugins.withId 能在插件自己的 android {} 执行完之后立刻回调，
-//     所以必须在里面做覆盖，而不能在 root 脚本顶层做 —— 那时子项目的脚本还没跑。
-//   · 但 :app 被 subprojects { dependencyResolutionManagement } 之外的方式提前评估时，
-//     回调触发那一刻项目可能已经是 evaluated 状态，直接再调 afterEvaluate 会抛
-//     "Cannot run Project.afterEvaluate(Action) when the project is already evaluated."
-//     （实测 8a06cd3 就是这样整票失败的）。
-//   · 因此统一走一次 helper：未评估则 afterEvaluate，已评估则立即执行。
-fun Gradle.applyAfterProjectEvaluated(proj: Project, action: () -> Unit) {
+// 但只挂 afterEvaluate 也不够 —— 回调触发那一刻项目可能已经是 evaluated 状态，
+// 再调 afterEvaluate 会抛 "Cannot run Project.afterEvaluate(Action) when the project
+// is already evaluated."（实测 8a06cd3 就是这样整票失败的）。因此统一走 helper：
+// 未评估就挂 afterEvaluate（保证插件自身的 android {} 已经执行完），已评估就立即执行。
+// 注意：helper 不能定义成 Gradle 的扩展函数，否则在 plugins.withId 的 Project 接收者
+// 里调用会撞 receiver 不匹配（Unresolved reference 一箩筐）。
+fun applyAfterProjectEvaluated(proj: Project, action: () -> Unit) {
     if (proj.state.executed) {
         action()
     } else {
@@ -64,15 +61,16 @@ listOf("com.android.library", "com.android.application").forEach { androidPlugin
     subprojects {
         plugins.withId(androidPluginId) {
             val proj = this
-            applyAfterProjectEvaluated(this) {
+            applyAfterProjectEvaluated(proj) {
                 val androidExt = proj.extensions.findByName("android")
                 if (androidExt == null) {
-                    proj.logger.lifecycle("[android-patch] ${proj.path} 没有 android 扩展，跳过")
+                    proj.logger.lifecycle("[android-patch] ${proj.path} no android extension, skip")
                     return@applyAfterProjectEvaluated
                 }
 
                 // ---- 1) 统一 NDK 版本 ----
-                ndkVersionOverride?.let { v ->
+                val v = ndkVersionOverride
+                if (v != null) {
                     runCatching {
                         androidExt.javaClass.getMethod("setNdkVersion", String::class.java).invoke(androidExt, v)
                         proj.logger.lifecycle("[ndk-override] ${proj.path} -> $v")
@@ -83,9 +81,10 @@ listOf("com.android.library", "com.android.application").forEach { androidPlugin
 
                 // ---- 2) 补齐缺失的 namespace ----
                 runCatching {
-                    val existing = runCatching {
-                        androidExt.javaClass.getMethod("getNamespace").invoke(androidExt) as? String
-                    }.getOrNull()
+                    val existing =
+                        runCatching {
+                            androidExt.javaClass.getMethod("getNamespace").invoke(androidExt) as? String
+                        }.getOrNull()
                     if (existing.isNullOrBlank()) {
                         val manifestFile = proj.file("src/main/AndroidManifest.xml")
                         val fromManifest =
@@ -107,39 +106,6 @@ listOf("com.android.library", "com.android.application").forEach { androidPlugin
         }
     }
 }
-// 为缺失 namespace 的老插件自动补全。
-//
-// AGP 8.x 起 namespace 成为必填项，而一些长期未更新的插件（例如 on_audio_query_android
-// 1.1.0，pub.dev 上已是最后一版）仍然只在 AndroidManifest.xml 里写 package 属性，
-// 直接导致："Namespace not specified. Specify a namespace in the module's build file"。
-// 这里在子项目评估完成、AGP 校验之前，用反射把 namespace 补上：
-//   1. 优先取模块源码 AndroidManifest.xml 里的 package 值（与原插件行为一致）
-//   2. 取不到时退回 com.melodyflow.compat.<模块名>
-listOf("com.android.library", "com.android.application").forEach { androidPluginId ->
-    subprojects {
-        plugins.withId(androidPluginId) {
-            runCatching {
-                val ext = extensions.findByName("android")
-                    ?: error("android extension 不存在")
-                val existing = runCatching {
-                    ext.javaClass.getMethod("getNamespace").invoke(ext) as? String
-                }.getOrNull()
-                if (!existing.isNullOrBlank()) return@withId
-                val manifestFile = file("src/main/AndroidManifest.xml")
-                val fromManifest = if (manifestFile.exists()) {
-                    Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
-                } else null
-                val ns = fromManifest?.takeIf { it.isNotBlank() }
-                    ?: "com.melodyflow.compat." + project.name.replace(Regex("[^A-Za-z0-9_]"), "_")
-                ext.javaClass.getMethod("setNamespace", String::class.java).invoke(ext, ns)
-                logger.lifecycle("[namespace-fix] ${project.path} -> $ns")
-            }.onFailure { e ->
-                logger.lifecycle("[namespace-fix] ${project.path} skipped: ${e.message}")
-            }
-        }
-    }
-}
-
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
 // JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。
 // 该检查不影响 APK 产物本身，这里统一跳过以保证 release 构建稳定。

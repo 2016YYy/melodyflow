@@ -145,6 +145,11 @@ val legacyNamespaceFixes = mapOf(
 
 subprojects {
     if (legacyNamespaceFixes.containsKey(name)) {
+        println("[namespace-fix] hooking ${project.path}")
+        project.afterEvaluate {
+            val ext = project.extensions.findByName("android")
+            println("[namespace-fix] ${project.path} ext=${ext?.javaClass?.name} ns=${runCatching { ext?.javaClass?.getMethod("getNamespace")?.invoke(ext) }.getOrNull()}")
+        }
         plugins.withId("com.android.library") {
             ensureNamespace(project, legacyNamespaceFixes[name])
         }

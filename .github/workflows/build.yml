@@ -119,6 +119,7 @@ jobs:
           done
           echo "选用 NDK 版本: $NDK_PIN"
           echo "MELODYFLOW_NDK_VERSION=$NDK_PIN" >> "$GITHUB_ENV"
+
       - name: Install dependencies
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"

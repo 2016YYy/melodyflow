@@ -34,18 +34,25 @@ subprojects {
 // 通过反射调用 setNdkVersion，避免在 root 脚本里直接引用 AGP 类型
 // （root 的 classpath 未必包含 AGP）。
 val ndkVersionOverride: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeIf { it.isNotBlank() }
+// 必须在 afterEvaluate 里覆盖，不能在 subprojects {} 里直接设。
+// root 的 subprojects 块执行时，子项目自身的构建脚本还没跑；:jni（由 media_kit 相关
+// 插件传递引入）会在自己的 android {} 里把 ndkVersion 设成插件作者的版本，
+// 于是 root 早先的设置被覆盖回去，AGP 在配置 :jni 阶段报
+// "NDK not configured. Preferred NDK version is ..."，与 :app 无关。
 subprojects {
-    val applyNdkOverride = {
+    afterEvaluate {
         ndkVersionOverride?.let { v ->
             extensions.findByName("android")?.let { ext ->
                 runCatching {
                     ext.javaClass.getMethod("setNdkVersion", String::class.java).invoke(ext, v)
+                }.onSuccess {
+                    logger.lifecycle("[ndk-override] ${project.path} -> $v")
+                }.onFailure { e ->
+                    logger.lifecycle("[ndk-override] ${project.path} failed: ${e.message}")
                 }
             }
         }
     }
-    plugins.withId("com.android.application") { applyNdkOverride() }
-    plugins.withId("com.android.library") { applyNdkOverride() }
 }
 
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因

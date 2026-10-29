@@ -2,12 +2,12 @@
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter)](https://flutter.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Windows-green)]()
+[![Platform](https://img.shields.io/badge/Platform-Android-green)]()
 [![Release](https://img.shields.io/github/v/release/2016YYy/melodyflow)](https://github.com/2016YYy/melodyflow/releases)
 
-> 开源跨平台音乐播放器 — 让音乐如流水般顺畅播放
+> 开源音乐播放器 — 让音乐如流水般顺畅播放
 
-MelodyFlow 是一款基于 **Flutter** 开发的开源跨平台音乐播放器，支持 **Android / iOS / Windows** 三端。采用最新的 `media_kit` 音频引擎，支持本地音乐扫描、第三方音源接入、在线歌词与封面获取，并内置应用内更新能力。
+MelodyFlow 是一款基于 **Flutter** 开发的开源音乐播放器，**当前官方发布 Android 版本**；源码保留 iOS / Windows 工程，但两端尚未启用 CI 构建。采用最新的 `media_kit` 音频引擎，支持本地音乐扫描、第三方音源接入、在线歌词与封面获取，并内置应用内更新能力。
 
 ---
 
@@ -57,9 +57,11 @@ MelodyFlow 是一款基于 **Flutter** 开发的开源跨平台音乐播放器�
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Android | `melodyflow-v1.7.0-android.apk` | Android 7.0+ |
-| iOS | `melodyflow-v1.7.0-ios.ipa` | iOS 13.0+（需自签） |
-| Windows | `melodyflow-v1.7.0-windows.exe` | Windows 10+ |
+| Android | `melodyflow-vX.Y.Z-android.apk` | Android 7.0+，正式签名 |
+| Android 校验 | `melodyflow-vX.Y.Z-android.apk.sha256` | SHA-256 校验文件 |
+
+> 当前 Release **仅提供 Android 安装包**。iOS 与 Windows 的构建任务在 CI 中处于关闭状态（`if: false`），
+> 源码保留双端工程，但暂无官方分发包。
 
 ### 从源码构建
 
@@ -74,14 +76,12 @@ flutter pub get
 # 生成应用图标
 flutter pub run flutter_launcher_icons
 
-# 构建 Android APK
+# 构建 Android APK（当前唯一官方分发平台）
 flutter build apk --release
 
-# 构建 Windows 安装包
-flutter build windows --release
-
-# 构建 iOS
-flutter build ios --release
+# 以下两端源码保留，但 CI 未启用，需要自行在本机验证
+# flutter build windows --release
+# flutter build ios --release
 ```
 
 ---

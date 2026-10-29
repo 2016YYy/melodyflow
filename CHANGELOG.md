@@ -6,6 +6,28 @@
 
 ---
 
+## [1.7.2] - 2026-10-29
+
+### 🐛 修复 CI 构建与发布
+
+- **修复 `:jni` 报 NDK not configured**：root `android/build.gradle.kts` 的 NDK 统一覆盖此前写在 `subprojects {}` 里，
+  执行时机早于子项目自身脚本，`jni` 插件随后把 `ndkVersion` 改回自己的版本，导致配置 `:jni` 阶段直接失败。
+  改为 `subprojects { afterEvaluate { ... } }` 后覆盖才真正生效，并输出 `[ndk-override]` 日志便于核对。
+- **修复 NDK 版本探测取错值**：`Install Android NDK` 步骤此前用 `grep ... | head -1` 扫整个 `flutter_tools/gradle/src`，
+  命中了 `FlutterPluginUtils.kt` 里的历史兜底常量 `21.1.6352462`，于是 runner 装了错误的 NDK。
+  现改为只在 `src/main/kotlin/FlutterPluginUtils.kt` 里取最大版本号，与 Flutter 实际生效值一致。
+- **修复 Release 资产缺失导致发布失败**：`action-gh-release` 的 `files` 仍列着 `windows-zip/*` 与 `ios-ipa/*`，
+  而这两个 job 早已 `if: false`，上传时找不到文件即失败。现只收 `android-apk/*`。
+
+### 📄 文档与发布模板对齐真实产物
+
+- **`.github/release_template.md` 重写**：不再列出从未产出过的 Windows `.zip` / iOS `.ipa`，
+  下载表只留 Android APK 与 `.sha256`，并补上 `### 🔒 完整性校验` 与 v1.5.0 签名断裂的升级提示。
+- **README 修正平台声明**：删除「支持 Android / iOS / Windows 三端」的表述与对应徽章，
+  改为明确「当前官方发布 Android 版本」，源码构建命令里 iOS / Windows 两行标注为未启用。
+
+---
+
 ## [1.7.1] - 2026-10-22
 
 ### 🔒 安全：清除历史中泄露的签名密钥口令

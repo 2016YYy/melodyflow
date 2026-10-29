@@ -43,13 +43,16 @@ jobs:
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
           echo "SDK_ROOT=$SDK_ROOT"
           echo "FLUTTER_ROOT=$FLUTTER_ROOT"
-          # app/build.gradle.kts 里 ndkVersion = flutter.ndkVersion，而 Flutter 各版本
-          # 声明的 NDK 版本并不相同（FlutterExtension.ndkVersion）。硬编码单一版本可能装的
-          # 不是 AGP 真正去 $SDK/ndk/<version> 里找的那个版本，所以直接从 Flutter SDK 源码里
-          # 读出来，再和 AGP 8.9 的默认值一起保证安装。
-          # 只看 src/main：src/test 里也有 ndkVersion 常量（例如 26.3.11579264），
-          # 读到测试值会装错版本。
-          FLUTTER_NDK="$(grep -rhoE 'ndkVersion[^=]{0,60}= *"[0-9.]+"' "$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          # Flutter 各版本声明的 NDK 不同，硬编码可能装错；这里从 Flutter SDK 源码里读出来，
+          # 再连同 AGP 8.9 的默认值一起保证安装。
+          # Flutter 真正生效的 NDK 版本来自 FlutterPluginUtils.kt 里那个拿不到的默认值
+          # （3.44.x 是 27.0.12077973）——注意千万别用 grep 全目录取"第一个"匹配，
+          # 那会撞上 21.1.6352462 这类历史兜底常量，装错版本。
+          FLUTTER_PLUGIN_UTILS="$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterPluginUtils.kt"
+          FLUTTER_NDK=""
+          if [ -f "$FLUTTER_PLUGIN_UTILS" ]; then
+            FLUTTER_NDK="$(grep -oE '"([0-9]{2})\.([0-9]+)\.([0-9]+)"' "$FLUTTER_PLUGIN_UTILS" | tr -d '"' | sort -V | tail -1)"
+          fi
           echo "Flutter 声明的 NDK 版本 = ${FLUTTER_NDK:-<未探测到>}"
           SDKMGR="$(command -v sdkmanager || true)"
           if [ -z "$SDKMGR" ]; then
@@ -63,7 +66,8 @@ jobs:
             exit 1
           fi
           echo "using sdkmanager: $SDKMGR"
-          for V in "$FLUTTER_NDK" "27.0.12077973"; do
+          AGP_DEFAULT_NDK="27.0.12077973"
+          for V in "$FLUTTER_NDK" "$AGP_DEFAULT_NDK"; do
             [ -z "$V" ] && continue
             if [ -f "$SDK_ROOT/ndk/$V/source.properties" ]; then
               echo "NDK $V 已存在且已注册，跳过"
@@ -93,8 +97,10 @@ jobs:
               echo "  BAD  $v 缺少 source.properties（AGP 会视为未安装）"
             fi
           done
+          # 优先用 Flutter 声明版本：root 的 afterEvaluate 会把它强制写到所有子项目，
+          # 包括 :jni。这样装的、用的、AGP 找的是同一个版本，不会再报 NDK not configured。
           CHOSEN=""
-          for cand in "$FLUTTER_NDK" "27.0.12077973" "27.3.13750724"; do
+          for cand in "$FLUTTER_NDK" "$AGP_DEFAULT_NDK" "27.3.13750724"; do
             [ -z "$cand" ] && continue
             if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
           done
@@ -445,9 +451,9 @@ jobs:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           name: MelodyFlow ${{ github.event.inputs.version || github.ref_name }}
           body_path: .github/release_template.md
+          # 只上传实际启用的产物。windows-zip / ios-ipa 当前 job 是 if: false，
+          # 列在这里会让 action-gh-release 因找不到文件而失败。
           files: |
             android-apk/*
-            windows-zip/*
-            ios-ipa/*
           draft: false
           prerelease: false

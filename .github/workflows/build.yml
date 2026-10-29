@@ -135,11 +135,26 @@ jobs:
           # 它可能被本仓库 .gitignore 忽略、也可能被 flutter 覆盖，这里显式补全。
           FLUTTER_BIN="$(readlink -f "$(command -v flutter)")"
           FLUTTER_DIR="$(dirname "$(dirname "$FLUTTER_BIN")")"
+          # NDK 版本必须在这里重新取一次：NDK_PIN 是【上一步】run 脚本里的局部变量，
+          # 跨 step 不会保留，只有写进 $GITHUB_ENV 的 MELODYFLOW_NDK_VERSION 能传过来。
+          # 之前直接引用 $NDK_PIN，写出来的就是 "ndk.dir=/usr/local/lib/android/sdk/ndk/"，
+          # AGP 拿这个目录当 NDK 根，报 [CXX1101] NDK at .../ndk did not have a source.properties file。
+          NDK_PIN="${MELODYFLOW_NDK_VERSION:-}"
+          if [ -z "$NDK_PIN" ]; then
+            echo "ERROR: MELODYFLOW_NDK_VERSION 为空，上一步 Install Android NDK 未生效"
+            exit 1
+          fi
+          if [ ! -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
+            echo "ERROR: NDK $NDK_PIN 缺少 source.properties，拒绝写入 ndk.dir"
+            ls -la "$SDK_ROOT/ndk" || true
+            exit 1
+          fi
+          echo "local.properties 将写入 ndk.dir=$SDK_ROOT/ndk/$NDK_PIN"
           {
             echo "sdk.dir=$SDK_ROOT"
             echo "flutter.sdk=$FLUTTER_DIR"
-            echo "# NDK 显式路径：AGP 的 NdkLocator 优先读取 android.ndkPath / ndk.dir，"
-            echo "# 找不到才会去扫 sdk/ndk。CI 上 sdk.dir 一旦错位就是 NDK not configured。"
+            echo "# NDK 显式路径：AGP 的 NdkLocator 优先读 android.ndkPath / ndk.dir，"
+            echo "# 找不到才去扫 sdk/ndk。注意 ndk.dir 必须指到具体版本目录，指到 ndk/ 会报 CXX1101。"
             echo "ndk.dir=$SDK_ROOT/ndk/$NDK_PIN"
           } > android/local.properties
           echo "=== android/local.properties ==="

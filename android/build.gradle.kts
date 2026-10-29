@@ -17,9 +17,13 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
-}
+// 注意：这里【不能】用 subprojects { evaluationDependsOn(":app") }。
+// root 脚本执行时 :app 往往已经被评估过，Gradle 会直接报
+//   Cannot run Project.afterEvaluate(Action) when the project is already evaluated.
+// 也就是说 evaluationDependsOn 一旦对已评估项目生效，就会让"后续 afterEvaluate 注册"变成非法操作，
+// 连带把下面两段 afterEvaluate 补丁全部搞挂（历史上就是这样连续失败的）。
+// Flutter 插件模块本来就会通过自身的 apply 逻辑依赖 :app 的输出目录，
+// 真正需要的是 buildDir 重定向，上面的 subprojects {} 已经处理，无需强制评估顺序。
 
 // 统一所有 Android 子项目的 NDK 版本。
 //
@@ -39,13 +43,18 @@ val ndkVersionOverride: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeI
 // 插件传递引入）会在自己的 android {} 里把 ndkVersion 设成插件作者的版本，
 // 于是 root 早先的设置被覆盖回去，AGP 在配置 :jni 阶段报
 // "NDK not configured. Preferred NDK version is ..."，与 :app 无关。
-subprojects {
-    afterEvaluate {
-        ndkVersionOverride?.let { v ->
-            extensions.findByName("android")?.let { ext ->
+// 用 plugins.withId("com.android.library"/"com.android.application") 而不是裸 afterEvaluate：
+// 插件一旦应用，本回调立即执行，此时插件自身的 android {} 配置块已经在它自己的脚本里设好，
+// 我们在它之后覆盖即可，且不会撞上"项目已评估"的错误。
+listOf("com.android.library", "com.android.application").forEach { androidPluginId ->
+    subprojects {
+        plugins.withId(androidPluginId) {
+            // 用反射，避免 root 脚本直接引用 AGP 类型（root 的 classpath 未必包含 AGP）
+            ndkVersionOverride?.let { v ->
                 runCatching {
+                    val ext = extensions.findByName("android")
+                        ?: error("android extension 不存在")
                     ext.javaClass.getMethod("setNdkVersion", String::class.java).invoke(ext, v)
-                }.onSuccess {
                     logger.lifecycle("[ndk-override] ${project.path} -> $v")
                 }.onFailure { e ->
                     logger.lifecycle("[ndk-override] ${project.path} failed: ${e.message}")
@@ -63,24 +72,27 @@ subprojects {
 // 这里在子项目评估完成、AGP 校验之前，用反射把 namespace 补上：
 //   1. 优先取模块源码 AndroidManifest.xml 里的 package 值（与原插件行为一致）
 //   2. 取不到时退回 com.melodyflow.compat.<模块名>
-subprojects {
-    afterEvaluate {
-        runCatching {
-            val ext = extensions.findByName("android") ?: return@afterEvaluate
-            val existing = runCatching {
-                ext.javaClass.getMethod("getNamespace").invoke(ext) as? String
-            }.getOrNull()
-            if (!existing.isNullOrBlank()) return@afterEvaluate
-            val manifestFile = file("src/main/AndroidManifest.xml")
-            val fromManifest = if (manifestFile.exists()) {
-                Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
-            } else null
-            val ns = fromManifest?.takeIf { it.isNotBlank() }
-                ?: "com.melodyflow.compat." + project.name.replace(Regex("[^A-Za-z0-9_]"), "_")
-            ext.javaClass.getMethod("setNamespace", String::class.java).invoke(ext, ns)
-            logger.lifecycle("[namespace-fix] ${project.path} -> $ns")
-        }.onFailure { e ->
-            logger.lifecycle("[namespace-fix] ${project.path} skipped: ${e.message}")
+listOf("com.android.library", "com.android.application").forEach { androidPluginId ->
+    subprojects {
+        plugins.withId(androidPluginId) {
+            runCatching {
+                val ext = extensions.findByName("android")
+                    ?: error("android extension 不存在")
+                val existing = runCatching {
+                    ext.javaClass.getMethod("getNamespace").invoke(ext) as? String
+                }.getOrNull()
+                if (!existing.isNullOrBlank()) return@withId
+                val manifestFile = file("src/main/AndroidManifest.xml")
+                val fromManifest = if (manifestFile.exists()) {
+                    Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
+                } else null
+                val ns = fromManifest?.takeIf { it.isNotBlank() }
+                    ?: "com.melodyflow.compat." + project.name.replace(Regex("[^A-Za-z0-9_]"), "_")
+                ext.javaClass.getMethod("setNamespace", String::class.java).invoke(ext, ns)
+                logger.lifecycle("[namespace-fix] ${project.path} -> $ns")
+            }.onFailure { e ->
+                logger.lifecycle("[namespace-fix] ${project.path} skipped: ${e.message}")
+            }
         }
     }
 }

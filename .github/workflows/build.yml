@@ -67,6 +67,9 @@ jobs:
           fi
           echo "using sdkmanager: $SDKMGR"
           AGP_DEFAULT_NDK="27.0.12077973"
+          # runner 镜像通常已预装多个 NDK（27.3.13750724 / 29.x / 30.x 等），
+          # 只要 source.properties 存在就算已注册，不需要重复下载。
+          # 这里直接取"已注册版本里最大的那个"作为首选，避免再去装一份老的。
           for V in "$FLUTTER_NDK" "$AGP_DEFAULT_NDK"; do
             [ -z "$V" ] && continue
             if [ -f "$SDK_ROOT/ndk/$V/source.properties" ]; then
@@ -97,16 +100,20 @@ jobs:
               echo "  BAD  $v 缺少 source.properties（AGP 会视为未安装）"
             fi
           done
-          # 优先用 Flutter 声明版本：root 的 afterEvaluate 会把它强制写到所有子项目，
-          # 包括 :jni。这样装的、用的、AGP 找的是同一个版本，不会再报 NDK not configured。
-          CHOSEN=""
-          for cand in "$FLUTTER_NDK" "$AGP_DEFAULT_NDK" "27.3.13750724"; do
-            [ -z "$cand" ] && continue
-            if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
-          done
+          # root build.gradle.kts 会把这个值强制写到所有 Android 子项目（含 :jni），
+          # 所以"装的、用的、AGP 找的"必须是同一个版本，否则就报 NDK not configured。
+          # 选版策略（关键教训）：
+          #   · 优先用已注册版本里最大的那个 —— runner 预装的新版 NDK 一定比 sdkmanager
+          #     现场下载更可靠，也不会出现"装了 21.1.6352462 却让 AGP 认 27.x"的错配
+          #   · 早期把 FLUTTER_NDK 排在最前，结果从 FlutterPluginUtils.kt 里抓到了
+          #     21.1.6352462（历史兜底常量），导致 MELODYFLOW_NDK_VERSION=21.1.6352462，
+          #     而 :app 自己用 27.0.12077973，两边不一致直接失败
+          # 取"已注册（有 source.properties）版本里按版本号排序最大的那个"
+          CHOSEN="$(ls -1 "$SDK_ROOT"/ndk/*/source.properties 2>/dev/null | sed 's#/source.properties##' | xargs -n1 basename 2>/dev/null | sort -V | tail -1)"
           if [ -z "$CHOSEN" ]; then
-            for d in "$SDK_ROOT"/ndk/*/; do
-              if [ -f "$d/source.properties" ]; then CHOSEN="$(basename "$d")"; break; fi
+            for cand in "$AGP_DEFAULT_NDK" "$FLUTTER_NDK"; do
+              [ -z "$cand" ] && continue
+              if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
             done
           fi
           if [ -z "$CHOSEN" ]; then

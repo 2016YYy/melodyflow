@@ -102,19 +102,28 @@ jobs:
           done
           # root build.gradle.kts 会把这个值强制写到所有 Android 子项目（含 :jni），
           # 所以"装的、用的、AGP 找的"必须是同一个版本，否则就报 NDK not configured。
-          # 选版策略（关键教训）：
-          #   · 优先用已注册版本里最大的那个 —— runner 预装的新版 NDK 一定比 sdkmanager
-          #     现场下载更可靠，也不会出现"装了 21.1.6352462 却让 AGP 认 27.x"的错配
-          #   · 早期把 FLUTTER_NDK 排在最前，结果从 FlutterPluginUtils.kt 里抓到了
-          #     21.1.6352462（历史兜底常量），导致 MELODYFLOW_NDK_VERSION=21.1.6352462，
-          #     而 :app 自己用 27.0.12077973，两边不一致直接失败
-          # 取"已注册（有 source.properties）版本里按版本号排序最大的那个"
-          CHOSEN="$(ls -1 "$SDK_ROOT"/ndk/*/source.properties 2>/dev/null | sed 's#/source.properties##' | xargs -n1 basename 2>/dev/null | sort -V | tail -1)"
+          # 选版策略（本轮最终结论，踩了三轮坑才定下来）：
+          #
+          # 硬约束：media_kit 传递进来的 :jni 子工程里写死了
+          #     ndkVersion = flutter.ndkVersion
+          # 这个 flutter 扩展由 Flutter Gradle 插件在 apply 时才创建，root 侧无论用
+          # gradle.beforeProject 还是 plugins.withId 去 setNdkVersion，都抢不过 AGP：
+          # AGP 在 plugin apply 的那一刻就注册了自己的 afterEvaluate（堆栈里可见
+          # CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks ->
+          # NdkLocatorKt.findNdkPathImpl），它先解析 NDK 并定型，我们后注册的覆盖来不及生效。
+          #
+          # 所以正确解不是"想办法覆盖 :jni"，而是"直接选与 flutter.ndkVersion 相同、
+          # 且 SDK 里确实已注册的那个版本"。Flutter 3.44.9 的默认值就是 27.0.12077973。
+          #   · 优先 27.0.12077973（Flutter 默认，与 :jni 天然一致）
+          #   · 退而求其次才用 AGP 默认 / SDK 里最大的版本
+          # 绝不要以为"选最新最大的 NDK 就稳"—— 30.0.16248370 反而会和 :jni 打架。
+          CHOSEN=""
+          for cand in "$AGP_DEFAULT_NDK" "$FLUTTER_NDK"; do
+            [ -z "$cand" ] && continue
+            if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
+          done
           if [ -z "$CHOSEN" ]; then
-            for cand in "$AGP_DEFAULT_NDK" "$FLUTTER_NDK"; do
-              [ -z "$cand" ] && continue
-              if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
-            done
+            CHOSEN="$(ls -1 "$SDK_ROOT"/ndk/*/source.properties 2>/dev/null | sed 's#/source.properties##' | xargs -n1 basename 2>/dev/null | sort -V | tail -1)"
           fi
           if [ -z "$CHOSEN" ]; then
             echo "ERROR: SDK 下没有任何已注册的 NDK"

@@ -9,12 +9,14 @@ plugins {
 android {
     namespace = "com.melodyflow.melodyflow"
     compileSdk = 36
-    // NDK 版本：优先使用环境变量 MELODYFLOW_NDK_VERSION（CI 按 runner 上真实可用、
-    // 且被 SDK 正确注册（存在 source.properties）的 NDK 目录来选定），否则退回
-    // Flutter 声明的版本。AGP 只要在 $SDK/ndk/<version> 找不到已注册目录，就会在
-    // 配置 :app 阶段直接抛 "NDK not configured"。
-    val ndkOverride = System.getenv("MELODYFLOW_NDK_VERSION")
-    ndkVersion = if (ndkOverride.isNullOrBlank()) flutter.ndkVersion else ndkOverride
+    // NDK 版本统一交给 root android/build.gradle.kts 的 applyAndroidPatch 处理：
+    // 那里在子项目 afterEvaluate（AGP 自己的 afterEvaluate 之前）用反射给每个 Android
+    // 子项目（:app、:jni、各插件）写入同一个 MELODYFLOW_NDK_VERSION。
+    // 这里【不要再设 ndkVersion】—— 实测在 :app 里写 ndkVersion 会在 AGP 配置 :app 的
+    // afterEvaluate 阶段就把 NDK 解析定型，此时若所选版本在 SDK 里没有注册目录，
+    // 会直接抛 "NDK not configured. Preferred NDK version is '27.0.12077973'"
+    // （NdkLocatorKt.findNdkPathImpl -> NdkHandler.getNdkStatus），
+    // 也就是 flutter.ndkVersion 的默认值抢先生效，root 的统一覆盖来不及介入。
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

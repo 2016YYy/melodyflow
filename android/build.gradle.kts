@@ -145,10 +145,23 @@ val legacyNamespaceFixes = mapOf(
 
 subprojects {
     if (legacyNamespaceFixes.containsKey(name)) {
-        println("[namespace-fix] hooking ${project.path}")
+        // AGP 8.11.1 把 namespace 解析下移到了 VariantDslInfoImpl.getNamespace()（见配置失败堆栈
+        // VariantDslInfoImpl.getNamespace(VariantDslInfoImpl.kt:92)），而 VariantBuilder 在
+        // CrashReporting$afterEvaluate（AGP 自己注册的那个）里创建。因此在 afterEvaluate 阶段才
+        // 反射设置 LibraryExtension.namespace 时已经太晚 —— 打印结果就是 ns=null。
+        // 可靠做法是在插件 apply 回调里立刻写：plugins.withId("com.android.library") {} 的回调
+        // 早于 AGP 注册的 afterEvaluate 执行，此时 LibraryExtension 已由 AGP 创建好。
         project.afterEvaluate {
             val ext = project.extensions.findByName("android")
-            println("[namespace-fix] ${project.path} ext=${ext?.javaClass?.name} ns=${runCatching { ext?.javaClass?.getMethod("getNamespace")?.invoke(ext) }.getOrNull()}")
+            val ns = runCatching { ext?.javaClass?.getMethod("getNamespace")?.invoke(ext) }.getOrNull()
+            println("[namespace-fix] ${project.path} ns=$ns")
+            if (ns == null || (ns as? String).isNullOrBlank()) {
+                runCatching {
+                    ext?.javaClass?.getMethod("setNamespace", String::class.java)
+                        ?.invoke(ext, legacyNamespaceFixes[name])
+                    println("[namespace-fix] ${project.path} late-set -> ${legacyNamespaceFixes[name]}")
+                }.onFailure { e -> println("[namespace-fix] ${project.path} late-set failed: ${e.message}") }
+            }
         }
         plugins.withId("com.android.library") {
             ensureNamespace(project, legacyNamespaceFixes[name])

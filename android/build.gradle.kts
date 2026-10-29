@@ -43,69 +43,67 @@ val ndkVersionOverride: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeI
 // 插件传递引入）会在自己的 android {} 里把 ndkVersion 设成插件作者的版本，
 // 于是 root 早先的设置被覆盖回去，AGP 在配置 :jni 阶段报
 // "NDK not configured. Preferred NDK version is ..."，与 :app 无关。
-// 但只挂 afterEvaluate 也不够 —— 回调触发那一刻项目可能已经是 evaluated 状态，
-// 再调 afterEvaluate 会抛 "Cannot run Project.afterEvaluate(Action) when the project
-// is already evaluated."（实测 8a06cd3 就是这样整票失败的）。因此统一走 helper：
-// 未评估就挂 afterEvaluate（保证插件自身的 android {} 已经执行完），已评估就立即执行。
-// 注意：helper 不能定义成 Gradle 的扩展函数，否则在 plugins.withId 的 Project 接收者
-// 里调用会撞 receiver 不匹配（Unresolved reference 一箩筐）。
-fun applyAfterProjectEvaluated(proj: Project, action: () -> Unit) {
-    if (proj.state.executed) {
-        action()
-    } else {
-        proj.afterEvaluate { action() }
-    }
-}
-
-listOf("com.android.library", "com.android.application").forEach { androidPluginId ->
-    subprojects {
-        plugins.withId(androidPluginId) {
-            val proj = this
-            applyAfterProjectEvaluated(proj) {
-                val androidExt = proj.extensions.findByName("android")
-                if (androidExt == null) {
-                    proj.logger.lifecycle("[android-patch] ${proj.path} no android extension, skip")
-                    return@applyAfterProjectEvaluated
-                }
-
-                // ---- 1) 统一 NDK 版本 ----
-                val v = ndkVersionOverride
-                if (v != null) {
-                    runCatching {
-                        androidExt.javaClass.getMethod("setNdkVersion", String::class.java).invoke(androidExt, v)
-                        proj.logger.lifecycle("[ndk-override] ${proj.path} -> $v")
-                    }.onFailure { e ->
-                        proj.logger.lifecycle("[ndk-override] ${proj.path} failed: ${e.message}")
-                    }
-                }
-
-                // ---- 2) 补齐缺失的 namespace ----
+// 但只挂 afterEvaluate 也不够 —— 若某子项目已被提前评估，再注册就会抛
+// "Cannot run Project.afterEvaluate(Action) when the project is already evaluated."
+// （实测 8a06cd3 就是这样整票失败的）。因此统一走下面的 applyAndroidPatch：
+// 未评估就挂 afterEvaluate，已评估就立即执行。
+// 在项目评估完成后统一打补丁（NDK 版本 + 缺失的 namespace）。
+// 抽出成普通函数而不是 Project 扩展函数：plugins.withId 的 lambda 里 receiver 不确定，
+// 写成 extension 会出现 "Unresolved reference. None of the following candidates is applicable
+// because of receiver type mismatch"，进而连 logger / extensions / path 全部解析失败。
+fun applyAndroidPatch(proj: Project) {
+    val action = {
+        val androidExt = proj.extensions.findByName("android")
+        if (androidExt == null) {
+            proj.logger.lifecycle("[android-patch] ${proj.path} 没有 android 扩展，跳过")
+        } else {
+            // ---- 1) 统一 NDK 版本（反射，避免 root classpath 缺 AGP 类型）----
+            val v = ndkVersionOverride
+            if (v != null) {
                 runCatching {
-                    val existing =
-                        runCatching {
-                            androidExt.javaClass.getMethod("getNamespace").invoke(androidExt) as? String
-                        }.getOrNull()
-                    if (existing.isNullOrBlank()) {
-                        val manifestFile = proj.file("src/main/AndroidManifest.xml")
-                        val fromManifest =
-                            if (manifestFile.exists()) {
-                                Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
-                            } else {
-                                null
-                            }
-                        val ns =
-                            fromManifest?.takeIf { it.isNotBlank() }
-                                ?: ("com.melodyflow.compat." + proj.name.replace(Regex("[^A-Za-z0-9_]"), "_"))
-                        androidExt.javaClass.getMethod("setNamespace", String::class.java).invoke(androidExt, ns)
-                        proj.logger.lifecycle("[namespace-fix] ${proj.path} -> $ns")
-                    }
+                    androidExt.javaClass.getMethod("setNdkVersion", String::class.java).invoke(androidExt, v)
+                    proj.logger.lifecycle("[ndk-override] ${proj.path} -> $v")
                 }.onFailure { e ->
-                    proj.logger.lifecycle("[namespace-fix] ${proj.path} skipped: ${e.message}")
+                    proj.logger.lifecycle("[ndk-override] ${proj.path} failed: ${e.message}")
                 }
+            }
+
+            // ---- 2) 补齐缺失的 namespace ----
+            runCatching {
+                val existing = runCatching {
+                    androidExt.javaClass.getMethod("getNamespace").invoke(androidExt) as? String
+                }.getOrNull()
+                if (existing.isNullOrBlank()) {
+                    val manifestFile = proj.file("src/main/AndroidManifest.xml")
+                    val fromManifest = if (manifestFile.exists()) {
+                        Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
+                    } else {
+                        null
+                    }
+                    val ns = fromManifest?.takeIf { it.isNotBlank() }
+                        ?: ("com.melodyflow.compat." + proj.name.replace(Regex("[^A-Za-z0-9_]"), "_"))
+                    androidExt.javaClass.getMethod("setNamespace", String::class.java).invoke(androidExt, ns)
+                    proj.logger.lifecycle("[namespace-fix] ${proj.path} -> $ns")
+                }
+            }.onFailure { e ->
+                proj.logger.lifecycle("[namespace-fix] ${proj.path} skipped: ${e.message}")
             }
         }
     }
+    // 已评估就立即执行，否则挂到 afterEvaluate —— 这样即使别处提前评估了子项目也不会抛
+    // "Cannot run Project.afterEvaluate(Action) when the project is already evaluated."
+    if (proj.state.executed) action() else proj.afterEvaluate { action() }
 }
+
+subprojects {
+    plugins.withId("com.android.library") {
+        applyAndroidPatch(project)
+    }
+    plugins.withId("com.android.application") {
+        applyAndroidPatch(project)
+    }
+}
+
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
 // JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。
 // 该检查不影响 APK 产物本身，这里统一跳过以保证 release 构建稳定。

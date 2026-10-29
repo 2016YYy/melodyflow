@@ -55,6 +55,36 @@ subprojects {
     }
 }
 
+// 为缺失 namespace 的老插件自动补全。
+//
+// AGP 8.x 起 namespace 成为必填项，而一些长期未更新的插件（例如 on_audio_query_android
+// 1.1.0，pub.dev 上已是最后一版）仍然只在 AndroidManifest.xml 里写 package 属性，
+// 直接导致："Namespace not specified. Specify a namespace in the module's build file"。
+// 这里在子项目评估完成、AGP 校验之前，用反射把 namespace 补上：
+//   1. 优先取模块源码 AndroidManifest.xml 里的 package 值（与原插件行为一致）
+//   2. 取不到时退回 com.melodyflow.compat.<模块名>
+subprojects {
+    afterEvaluate {
+        runCatching {
+            val ext = extensions.findByName("android") ?: return@afterEvaluate
+            val existing = runCatching {
+                ext.javaClass.getMethod("getNamespace").invoke(ext) as? String
+            }.getOrNull()
+            if (!existing.isNullOrBlank()) return@afterEvaluate
+            val manifestFile = file("src/main/AndroidManifest.xml")
+            val fromManifest = if (manifestFile.exists()) {
+                Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
+            } else null
+            val ns = fromManifest?.takeIf { it.isNotBlank() }
+                ?: "com.melodyflow.compat." + project.name.replace(Regex("[^A-Za-z0-9_]"), "_")
+            ext.javaClass.getMethod("setNamespace", String::class.java).invoke(ext, ns)
+            logger.lifecycle("[namespace-fix] ${project.path} -> $ns")
+        }.onFailure { e ->
+            logger.lifecycle("[namespace-fix] ${project.path} skipped: ${e.message}")
+        }
+    }
+}
+
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
 // JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。
 // 该检查不影响 APK 产物本身，这里统一跳过以保证 release 构建稳定。

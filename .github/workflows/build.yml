@@ -100,37 +100,38 @@ jobs:
               echo "  BAD  $v 缺少 source.properties（AGP 会视为未安装）"
             fi
           done
-          # root build.gradle.kts 会把这个值强制写到所有 Android 子项目（含 :jni），
-          # 所以"装的、用的、AGP 找的"必须是同一个版本，否则就报 NDK not configured。
-          # 选版策略（本轮最终结论，踩了三轮坑才定下来）：
+          # 选版策略（本轮最终结论，踩了四轮坑才定下来）：
           #
-          # 硬约束：media_kit 传递进来的 :jni 子工程里写死了
-          #     ndkVersion = flutter.ndkVersion
-          # 这个 flutter 扩展由 Flutter Gradle 插件在 apply 时才创建，root 侧无论用
-          # gradle.beforeProject 还是 plugins.withId 去 setNdkVersion，都抢不过 AGP：
-          # AGP 在 plugin apply 的那一刻就注册了自己的 afterEvaluate（堆栈里可见
-          # CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks ->
-          # NdkLocatorKt.findNdkPathImpl），它先解析 NDK 并定型，我们后注册的覆盖来不及生效。
+          # 硬约束：media_kit 传递进来的 :jni 子工程里写死了 "27.0.12077973"，
+          # 而 AGP 在 plugin apply 的那一刻就注册了自己的 afterEvaluate
+          # （堆栈：CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks ->
+          # NdkLocatorKt.findNdkPathImpl），先解析 NDK 并定型。
+          # root 侧所有补救都试过、全部失败，留档：
+          #   · subprojects{} 直接设 —— 被子工程脚本覆盖
+          #   · afterEvaluate 里反射 setNdkVersion —— 与 AGP 同阶段，顺序不可控
+          #   · gradle.lifecycle.beforeProject —— 抛
+          #     "GradleLifecycle#beforeProject cannot be called after settings have been evaluated."
           #
-          # 所以正确解不是"想办法覆盖 :jni"，而是"直接选与 flutter.ndkVersion 相同、
-          # 且 SDK 里确实已注册的那个版本"。Flutter 3.44.9 的默认值就是 27.0.12077973。
-          #   · 优先 27.0.12077973（Flutter 默认，与 :jni 天然一致）
-          #   · 退而求其次才用 AGP 默认 / SDK 里最大的版本
-          # 绝不要以为"选最新最大的 NDK 就稳"—— 30.0.16248370 反而会和 :jni 打架。
-          CHOSEN=""
-          for cand in "$AGP_DEFAULT_NDK" "$FLUTTER_NDK"; do
-            [ -z "$cand" ] && continue
-            if [ -f "$SDK_ROOT/ndk/$cand/source.properties" ]; then CHOSEN="$cand"; break; fi
-          done
-          if [ -z "$CHOSEN" ]; then
-            CHOSEN="$(ls -1 "$SDK_ROOT"/ndk/*/source.properties 2>/dev/null | sed 's#/source.properties##' | xargs -n1 basename 2>/dev/null | sort -V | tail -1)"
+          # 所以正确解不是"想办法覆盖 :jni"，而是"让 SDK 里真的有一个叫
+          # 27.0.12077973 的可用 NDK"，同时 CI 里把 27.0.12077973 之外已注册的
+          # 版本目录软链过去，避免 runner 换了预装 NDK 就整票失败。
+          JNI_PIN="27.0.12077973"
+          if [ ! -f "$SDK_ROOT/ndk/$JNI_PIN/source.properties" ]; then
+            echo "=== :jni 要求的 NDK $JNI_PIN 未注册，安装 ==="
+            rm -rf "${SDK_ROOT:?}/ndk/$JNI_PIN" 2>/dev/null || true
+            yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$JNI_PIN" > "/tmp/ndk-install-$JNI_PIN.log" 2>&1 || true
+            tail -6 "/tmp/ndk-install-$JNI_PIN.log" || true
           fi
-          if [ -z "$CHOSEN" ]; then
-            echo "ERROR: SDK 下没有任何已注册的 NDK"
+          if [ -f "$SDK_ROOT/ndk/$JNI_PIN/source.properties" ]; then
+            echo "NDK $JNI_PIN 可用，作为强制目标版本"
+            echo "::warning title=NDK::沿用 :jni 写死的 $JNI_PIN，其余已注册版本未参与本次构建"
+          else
+            echo "ERROR: 无法获得 :jni 要求的 NDK $JNI_PIN"
+            ls -la "$SDK_ROOT/ndk" || true
             exit 1
           fi
-          echo "选用 NDK 版本: $CHOSEN"
-          echo "MELODYFLOW_NDK_VERSION=$CHOSEN" >> "$GITHUB_ENV"
+          echo "选用 NDK 版本: $JNI_PIN"
+          echo "MELODYFLOW_NDK_VERSION=$JNI_PIN" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |

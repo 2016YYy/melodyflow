@@ -105,39 +105,33 @@ subprojects {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 兜底：在子工程自己的脚本执行【之前】就钉死 ndkVersion
+// 兜底：把每个子工程真正生效的 ndkVersion 读回来写进日志
 //
-// 背景（实测 0acf5d9 的 run 40852313959 仍然失败）：
-//   A problem occurred configuring project ':jni'.
-//   > NDK not configured. Download it with SDK manager. Preferred NDK version is '27.0.12077973'.
-// :jni 是 media_kit 传递进来的内置 Gradle 子工程，它自己的构建脚本在 root 的 subprojects
-// 补丁【之后】才执行，并把 ndkVersion 写死成 27.0.12077973；CI 里选中的是 SDK 上真实
-// 可用的 30.0.16248370，两边不一致 -> AGP 在配置 :jni 阶段直接抛错，跟 :app 无关。
-// afterEvaluate 也救不了：AGP 在 Project.afterEvaluate 阶段就创建 CXX 任务并解析 NDK。
+// 背景：:jni（media_kit 传递进来的内置 Gradle 子工程）会把自己的 ndkVersion 写死成
+//   "NDK not configured. Download it with SDK manager. Preferred NDK version is '27.0.12077973'."
+// 而 CI 选中 SDK 上真实可用的 30.0.16248370，AGP 在配置 :jni 阶段就抛错，跟 :app 无关。
 //
-// 所以唯一有效的时机是 beforeProject / 子工程脚本执行前。Gradle 8 把
-// gradle.beforeProject {} 标记为 @Deprecated（仍可用），Kotlin DSL 编译会告警，
-// 这里用 gradle.lifecycle.beforeProject {}（Gradle 8.8+ 的官方替代）间接拿到工程。
+// 踩过的两个坑（都实测失败了，留档）：
+//   · 在 subprojects{plugins.withId(...)} 的 afterEvaluate 里改 android.ndkVersion ——
+//     补丁确实跑了，但 AGP 在同一个 afterEvaluate 阶段就创建 CXX 任务并解析 NDK，
+//     顺序不可控，:jni 依旧报错。
+//   · 改用 gradle.lifecycle.beforeProject{} —— root 脚本求值发生在 settings 之后，
+//     直接抛 "GradleLifecycle#beforeProject cannot be called after settings have been
+//     evaluated."（run 40854401300）。
+// 所以真正的解法只能是改源头：CI 里把 MELODYFLOW_NDK_VERSION 选成 :jni 要求的版本
+// （由 android/settings.gradle.kts 从 Gradle 属性 melodyflow.jniNdkVersion 读出），
+// 并让 build.yml 把 sdkmanager 安装好的那些版本统一软链到该版本号。这里只负责把
+// 每个子工程最终生效的值打出来，方便 CI 排错。
 // ─────────────────────────────────────────────────────────────────────────────
-val ndkPin: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeIf { it.isNotBlank() }
-
-fun applyNdkPin(proj: Project, version: String) {
-    runCatching {
-        val ext = proj.extensions.findByName("android") ?: return@runCatching
-        ext.javaClass.getMethod("setNdkVersion", String::class.java).invoke(ext, version)
-        proj.logger.lifecycle("[ndk-pin] ${proj.path} -> $version")
+subprojects {
+    afterEvaluate {
+        runCatching {
+            val ext = extensions.findByName("android") ?: return@afterEvaluate
+            val v = ext.javaClass.getMethod("getNdkVersion").invoke(ext) as? String
+            logger.lifecycle("[ndk-effective] ${path} -> $v")
+        }
     }
 }
-
-if (ndkPin != null) {
-    // plugins.withId 在插件被 apply 的那一刻触发，早于该工程脚本里 android {} 的执行？
-    // 不早于 —— android {} 属于脚本体，插件 apply 在它的前面。所以那里设的值会被
-    // 脚本里的 ndkVersion = "27.0.12077973" 覆盖回去。只能靠 beforeProject 抢先。
-    gradle.lifecycle.beforeProject {
-        applyNdkPin(this, ndkPin)
-    }
-}
-
 
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
 // JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。

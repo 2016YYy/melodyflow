@@ -21,6 +21,33 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// 统一所有 Android 子项目的 NDK 版本。
+//
+// 背景：Flutter 插件（这里是通过 media_kit 相关依赖传递进来的 jni / jni_flutter）
+// 会带入自己的 Android Gradle 工程（项目名 :jni），其中硬编码了自己的 ndkVersion。
+//   · :app 用 flutter.ndkVersion（Flutter 3.44.9 声明 27.0.12077973）
+//   · :jni 用插件自己的版本
+// 只要某个版本对应的 NDK 目录在 CI 的 SDK 里不可用，AGP 就会在 configure 阶段直接
+// 抛 "NDK not configured"，跟具体是哪个模块无关。
+//
+// 因此在 root 统一覆盖：用 MELODYFLOW_NDK_VERSION（CI 里按 SDK 中真实可用的 NDK 选定），
+// 通过反射调用 setNdkVersion，避免在 root 脚本里直接引用 AGP 类型
+// （root 的 classpath 未必包含 AGP）。
+val ndkVersionOverride: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeIf { it.isNotBlank() }
+subprojects {
+    val applyNdkOverride = {
+        ndkVersionOverride?.let { v ->
+            extensions.findByName("android")?.let { ext ->
+                runCatching {
+                    ext.javaClass.getMethod("setNdkVersion", String::class.java).invoke(ext, v)
+                }
+            }
+        }
+    }
+    plugins.withId("com.android.application") { applyNdkOverride() }
+    plugins.withId("com.android.library") { applyNdkOverride() }
+}
+
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
 // JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。
 // 该检查不影响 APK 产物本身，这里统一跳过以保证 release 构建稳定。

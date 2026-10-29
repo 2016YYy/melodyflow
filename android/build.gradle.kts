@@ -104,6 +104,41 @@ subprojects {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 兜底：在子工程自己的脚本执行【之前】就钉死 ndkVersion
+//
+// 背景（实测 0acf5d9 的 run 40852313959 仍然失败）：
+//   A problem occurred configuring project ':jni'.
+//   > NDK not configured. Download it with SDK manager. Preferred NDK version is '27.0.12077973'.
+// :jni 是 media_kit 传递进来的内置 Gradle 子工程，它自己的构建脚本在 root 的 subprojects
+// 补丁【之后】才执行，并把 ndkVersion 写死成 27.0.12077973；CI 里选中的是 SDK 上真实
+// 可用的 30.0.16248370，两边不一致 -> AGP 在配置 :jni 阶段直接抛错，跟 :app 无关。
+// afterEvaluate 也救不了：AGP 在 Project.afterEvaluate 阶段就创建 CXX 任务并解析 NDK。
+//
+// 所以唯一有效的时机是 beforeProject / 子工程脚本执行前。Gradle 8 把
+// gradle.beforeProject {} 标记为 @Deprecated（仍可用），Kotlin DSL 编译会告警，
+// 这里用 gradle.lifecycle.beforeProject {}（Gradle 8.8+ 的官方替代）间接拿到工程。
+// ─────────────────────────────────────────────────────────────────────────────
+val ndkPin: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeIf { it.isNotBlank() }
+
+fun applyNdkPin(proj: Project, version: String) {
+    runCatching {
+        val ext = proj.extensions.findByName("android") ?: return@runCatching
+        ext.javaClass.getMethod("setNdkVersion", String::class.java).invoke(ext, version)
+        proj.logger.lifecycle("[ndk-pin] ${proj.path} -> $version")
+    }
+}
+
+if (ndkPin != null) {
+    // plugins.withId 在插件被 apply 的那一刻触发，早于该工程脚本里 android {} 的执行？
+    // 不早于 —— android {} 属于脚本体，插件 apply 在它的前面。所以那里设的值会被
+    // 脚本里的 ndkVersion = "27.0.12077973" 覆盖回去。只能靠 beforeProject 抢先。
+    gradle.lifecycle.beforeProject {
+        applyNdkPin(this, ndkPin)
+    }
+}
+
+
 // AGP 的 release lint 任务（lintVital*）在部分容器化构建环境中会因
 // JDK cgroup 探测失败（CgroupInfo.getMountPoint() 空指针）而中断打包。
 // 该检查不影响 APK 产物本身，这里统一跳过以保证 release 构建稳定。

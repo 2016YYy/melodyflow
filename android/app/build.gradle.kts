@@ -9,14 +9,19 @@ plugins {
 android {
     namespace = "com.melodyflow.melodyflow"
     compileSdk = 36
-    // NDK 版本统一交给 root android/build.gradle.kts 的 applyAndroidPatch 处理：
-    // 那里在子项目 afterEvaluate（AGP 自己的 afterEvaluate 之前）用反射给每个 Android
-    // 子项目（:app、:jni、各插件）写入同一个 MELODYFLOW_NDK_VERSION。
-    // 这里【不要再设 ndkVersion】—— 实测在 :app 里写 ndkVersion 会在 AGP 配置 :app 的
-    // afterEvaluate 阶段就把 NDK 解析定型，此时若所选版本在 SDK 里没有注册目录，
-    // 会直接抛 "NDK not configured. Preferred NDK version is '27.0.12077973'"
-    // （NdkLocatorKt.findNdkPathImpl -> NdkHandler.getNdkStatus），
-    // 也就是 flutter.ndkVersion 的默认值抢先生效，root 的统一覆盖来不及介入。
+    // 【这里不写 ndkVersion】。
+    //
+    // 因果链（CI 多轮实测）：
+    //   · dev.flutter.flutter-gradle-plugin 在 apply 时就会把 :app 的 ndkVersion
+    //     设成 flutter.ndkVersion（Flutter 3.44.9 = 28.2.13676358）；
+    //   · AGP 紧接着在自己的 afterEvaluate 里创建 CXX 任务，NdkLocator 就在那一刻
+    //     解析并定型 NDK（CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks
+    //     -> NdkLocatorKt.findNdkPathImpl -> NdkHandler.getNdkStatus）；
+    //   · 所以在这里（或 root 侧事后）覆盖 ndkVersion 都赶不上解析时点。
+    // 正确做法是环境侧保证 flutter.ndkVersion 那个版本真实注册在 SDK 里
+    // （见 .github/workflows/build.yml 的 Install Android NDK 步骤）。
+    // 另外 MUST 与 flutter.ndkVersion 一致：这里的 AGP 版本必须是 8.11.x，
+    // 8.9.x 会把 27.0.12077973 当作自己的默认 NDK，从而掩盖真实要求。
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

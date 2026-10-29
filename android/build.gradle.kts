@@ -25,32 +25,26 @@ subprojects {
 // Flutter 插件模块本来就会通过自身的 apply 逻辑依赖 :app 的输出目录，
 // 真正需要的是 buildDir 重定向，上面的 subprojects {} 已经处理，无需强制评估顺序。
 
-// 统一所有 Android 子项目的 NDK 版本。
+// gradle.properties 可覆盖 NDK 版本。
 //
-// 背景：Flutter 插件（这里是通过 media_kit 相关依赖传递进来的 jni / jni_flutter）
-// 会带入自己的 Android Gradle 工程（项目名 :jni），其中硬编码了自己的 ndkVersion。
-//   · :app 用 flutter.ndkVersion（Flutter 3.44.9 声明 27.0.12077973）
-//   · :jni 用插件自己的版本
-// 只要某个版本对应的 NDK 目录在 CI 的 SDK 里不可用，AGP 就会在 configure 阶段直接
-// 抛 "NDK not configured"，跟具体是哪个模块无关。
+// 背景（CI 实测的完整因果链）：
+//   · :app 的 ndkVersion 由 dev.flutter.flutter-gradle-plugin 在 apply 时写成
+//     flutter.ndkVersion（Flutter 3.44.9 = 28.2.13676358）；
+//   · AGP 的 NdkLocator 在【它自己的 afterEvaluate】阶段就解析定型 NDK
+//     （CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks ->
+//      NdkLocatorKt.findNdkPathImpl）。root 侧任何事后覆盖都抢不到这个时点：
+//      subprojects 直接赋值会被子工程脚本改回去、反射 setNdkVersion 与 AGP 同阶段、
+//      gradle.lifecycle.beforeProject 在 settings 求值后直接抛异常；
+//   · 所以【不覆盖】，而是让 SDK 里真的存在 Flutter 要求的那个版本（见 build.yml
+//     的 Install Android NDK 步骤），这里只保留 flutter 的 defaults。
 //
-// 因此在 root 统一覆盖：用 MELODYFLOW_NDK_VERSION（CI 里按 SDK 中真实可用的 NDK 选定），
-// 通过反射调用 setNdkVersion，避免在 root 脚本里直接引用 AGP 类型
-// （root 的 classpath 未必包含 AGP）。
+// 唯一还需要的干预是插件级替换：
+//   · media_kit -> :jni（pub 包 jni 的 android/build.gradle）写的是
+//     ndkVersion = flutter.ndkVersion，:app 用同一个值，冲突的旧版本只可能来自
+//     plugins.withId("com.android.library") 引入的其它插件。对它们用
+//     android.ndkVersion 兜底即可（AGP 在 library 插件里没有 CXX 任务，解析时点更晚）。
 val ndkVersionOverride: String? = System.getenv("MELODYFLOW_NDK_VERSION")?.takeIf { it.isNotBlank() }
-// 必须在 afterEvaluate 里覆盖，不能在 subprojects {} 里直接设。
-// root 的 subprojects 块执行时，子项目自身的构建脚本还没跑；:jni（由 media_kit 相关
-// 插件传递引入）会在自己的 android {} 里把 ndkVersion 设成插件作者的版本，
-// 于是 root 早先的设置被覆盖回去，AGP 在配置 :jni 阶段报
-// "NDK not configured. Preferred NDK version is ..."，与 :app 无关。
-// 但只挂 afterEvaluate 也不够 —— 若某子项目已被提前评估，再注册就会抛
-// "Cannot run Project.afterEvaluate(Action) when the project is already evaluated."
-// （实测 8a06cd3 就是这样整票失败的）。因此统一走下面的 applyAndroidPatch：
-// 未评估就挂 afterEvaluate，已评估就立即执行。
-// 在项目评估完成后统一打补丁（NDK 版本 + 缺失的 namespace）。
-// 抽出成普通函数而不是 Project 扩展函数：plugins.withId 的 lambda 里 receiver 不确定，
-// 写成 extension 会出现 "Unresolved reference. None of the following candidates is applicable
-// because of receiver type mismatch"，进而连 logger / extensions / path 全部解析失败。
+
 fun applyAndroidPatch(proj: Project) {
     val action = {
         val androidExt = proj.extensions.findByName("android")
@@ -76,7 +70,8 @@ fun applyAndroidPatch(proj: Project) {
                 if (existing.isNullOrBlank()) {
                     val manifestFile = proj.file("src/main/AndroidManifest.xml")
                     val fromManifest = if (manifestFile.exists()) {
-                        Regex("<manifest[^>]*package=\"([^\"]+)\"").find(manifestFile.readText())?.groupValues?.get(1)
+                        Regex("<manifest[^>]*package=\"([^\"]+)\"")
+                            .find(manifestFile.readText())?.groupValues?.get(1)
                     } else {
                         null
                     }
@@ -90,11 +85,14 @@ fun applyAndroidPatch(proj: Project) {
             }
         }
     }
-    // 已评估就立即执行，否则挂到 afterEvaluate —— 这样即使别处提前评估了子项目也不会抛
+    // 已评估就立即执行，否则挂到 afterEvaluate —— 避免
     // "Cannot run Project.afterEvaluate(Action) when the project is already evaluated."
     if (proj.state.executed) action() else proj.afterEvaluate { action() }
 }
 
+// 用 plugins.withId 保证插件一被 apply 就能挂钩到 afterEvaluate。
+// 注意：这里也不会真正改到 :app 的 ndkVersion —— AGP 解析 NDK 的时点更早，
+// 覆盖无效，所以 :app 直接跟随 flutter.ndkVersion，环境侧保证该版本存在。
 subprojects {
     plugins.withId("com.android.library") {
         applyAndroidPatch(project)
@@ -107,9 +105,10 @@ subprojects {
 // ─────────────────────────────────────────────────────────────────────────────
 // 兜底：把每个子工程真正生效的 ndkVersion 读回来写进日志
 //
-// 背景：:jni（media_kit 传递进来的内置 Gradle 子工程）会把自己的 ndkVersion 写死成
+// 历史上 NDK 报错的文案是
 //   "NDK not configured. Download it with SDK manager. Preferred NDK version is '27.0.12077973'."
-// 而 CI 选中 SDK 上真实可用的 30.0.16248370，AGP 在配置 :jni 阶段就抛错，跟 :app 无关。
+// 那个 27.0.12077973 来自 AGP 8.9.x 自己的默认值，不是 Flutter 声明的版本，
+// 追着它装 NDK 只会一直失败。真正的 Required 版本是 flutter.ndkVersion。
 //
 // 踩过的两个坑（都实测失败了，留档）：
 //   · 在 subprojects{plugins.withId(...)} 的 afterEvaluate 里改 android.ndkVersion ——
@@ -118,10 +117,9 @@ subprojects {
 //   · 改用 gradle.lifecycle.beforeProject{} —— root 脚本求值发生在 settings 之后，
 //     直接抛 "GradleLifecycle#beforeProject cannot be called after settings have been
 //     evaluated."（run 40854401300）。
-// 所以真正的解法只能是改源头：CI 里把 MELODYFLOW_NDK_VERSION 选成 :jni 要求的版本
-// （由 android/settings.gradle.kts 从 Gradle 属性 melodyflow.jniNdkVersion 读出），
-// 并让 build.yml 把 sdkmanager 安装好的那些版本统一软链到该版本号。这里只负责把
-// 每个子工程最终生效的值打出来，方便 CI 排错。
+// 所以真正的解法是环境侧：CI 的 Install Android NDK 步骤直接安装
+// flutter.ndkVersion 对应的版本（28.2.13676358），保证 NdkLocator 一解析就能命中。
+// 这里只负责把每个子工程最终生效的值打出来，方便 CI 排错。
 // ─────────────────────────────────────────────────────────────────────────────
 subprojects {
     afterEvaluate {

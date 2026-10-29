@@ -122,8 +122,15 @@ Future<AudioServiceHandler> setupAudioService({
       androidNotificationChannelId: 'com.melodyflow.playback',
       androidNotificationChannelName: 'MelodyFlow 播放',
       androidNotificationChannelDescription: '音乐播放控制',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: false,
+      // audio_service 0.18.19 的 AudioServiceConfig 有断言：
+      //   !androidNotificationOngoing || androidStopForegroundOnPause
+      // 即 androidNotificationOngoing: true 必须搭配 androidStopForegroundOnPause: true
+      // （不可滑走的常驻通知只在暂停后仍保持前台时才成立）。此前写反导致 const 求值期
+      // 断言失败，报 "Constant evaluation error: The androidNotificationOngoing will make
+      // no effect with androidStopForegroundOnPause set to false"。
+      // 这里改成：暂停后退出前台（省电、可被系统回收），通知仍保留控制按钮。
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: true,
       androidNotificationIcon: 'drawable/ic_stat_music_note',
     ),
   );

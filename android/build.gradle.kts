@@ -90,6 +90,70 @@ fun applyAndroidPatch(proj: Project) {
     if (proj.state.executed) action() else proj.afterEvaluate { action() }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 老 pub 包的 namespace 修补（AGP 8.x 起 namespace 必填）
+//
+// 现象：升到 AGP 8.11.1 后，配置阶段直接失败：
+//   A problem occurred configuring project ':on_audio_query_android'.
+//   > Could not create an instance of type com.android.build.api.variant.impl.LibraryVariantBuilderImpl.
+//      > Namespace not specified. Specify a namespace in the module's build file:
+//        ~/.pub-cache/hosted/pub.dev/on_audio_query_android-1.1.0/android/build.gradle
+//
+// 根因：on_audio_query_android 1.1.0 是 2022 年的包，android/build.gradle 里只有
+//   group 'com.lucasjosino.on_audio_query'
+// 没有 android { namespace ... }，已在 pub.dev 上停止维护（对应 on_audio_query 2.9.0）。
+// AGP 4.x~7.x 允许从 AndroidManifest 的 package 属性推导 namespace，8.x 起强制要求
+// 构建脚本里显式声明。pub-cache 里的源码不能改（每次 pub get 都会被覆盖），
+// 只能在 root 侧于【配置阶段之前】把 namespace 写进它的 android 扩展。
+//
+// 时间点非常关键：必须在 AGP 创建 VariantBuilder 之前生效。plugins.withId 回调
+// 发生在插件 apply 的瞬间（早于 AGP 的 afterEvaluate），此时直接 setNamespace 最可靠；
+// 若已经错过（项目已评估），退回到 afterEvaluate。
+fun ensureNamespace(proj: Project, fixedNamespace: String?) {
+    val apply = {
+        runCatching {
+            val ext = proj.extensions.findByName("android") ?: return@runCatching
+            val existing = runCatching {
+                ext.javaClass.getMethod("getNamespace").invoke(ext) as? String
+            }.getOrNull()
+            if (existing.isNullOrBlank()) {
+                val ns = fixedNamespace?.takeIf { it.isNotBlank() }
+                    ?: runCatching {
+                        val f = proj.file("src/main/AndroidManifest.xml")
+                        if (f.exists()) {
+                            Regex("<manifest[^>]*package=\"([^\"]+)\"")
+                                .find(f.readText())?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
+                        } else null
+                    }.getOrNull()
+                    ?: ("com.melodyflow.compat." + proj.name.replace(Regex("[^A-Za-z0-9_]"), "_"))
+                ext.javaClass.getMethod("setNamespace", String::class.java).invoke(ext, ns)
+                proj.logger.lifecycle("[namespace-fix] ${proj.path} -> $ns")
+            } else {
+                proj.logger.lifecycle("[namespace-fix] ${proj.path} already = $existing")
+            }
+        }.onFailure { e ->
+            proj.logger.lifecycle("[namespace-fix] ${proj.path} skipped: ${e.message}")
+        }
+    }
+    if (proj.state.executed) apply() else proj.afterEvaluate { apply() }
+}
+
+// 已知缺 namespace 的第三方包：显式写死，避免依赖 manifest 推导（AGP 8 不再推导）。
+val legacyNamespaceFixes = mapOf(
+    "on_audio_query_android" to "com.lucasjosino.on_audio_query",
+)
+
+subprojects {
+    if (legacyNamespaceFixes.containsKey(name)) {
+        plugins.withId("com.android.library") {
+            ensureNamespace(project, legacyNamespaceFixes[name])
+        }
+        plugins.withId("com.android.application") {
+            ensureNamespace(project, legacyNamespaceFixes[name])
+        }
+    }
+}
+
 // 用 plugins.withId 保证插件一被 apply 就能挂钩到 afterEvaluate。
 // 注意：这里也不会真正改到 :app 的 ndkVersion —— AGP 解析 NDK 的时点更早，
 // 覆盖无效，所以 :app 直接跟随 flutter.ndkVersion，环境侧保证该版本存在。

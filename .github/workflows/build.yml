@@ -94,16 +94,16 @@ jobs:
             exit 1
           fi
           JNI_PIN="$FLUTTER_NDK"
-          if [ -f "$SDK_ROOT/ndk/$JNI_PIN/source.properties" ]; then
-            echo "NDK $JNI_PIN 已注册，直接使用"
+          if [ -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
+            echo "NDK $NDK_PIN 已注册，直接使用"
           else
-            echo "=== 安装 flutter.ndkVersion 对应的 NDK $JNI_PIN ==="
-            rm -rf "${SDK_ROOT:?}/ndk/$JNI_PIN" 2>/dev/null || true
-            yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$JNI_PIN" > "/tmp/ndk-install-$JNI_PIN.log" 2>&1 || true
-            tail -6 "/tmp/ndk-install-$JNI_PIN.log" || true
+            echo "=== 安装 flutter.ndkVersion 对应的 NDK $NDK_PIN ==="
+            rm -rf "${SDK_ROOT:?}/ndk/$NDK_PIN" 2>/dev/null || true
+            yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$NDK_PIN" > "/tmp/ndk-install-$NDK_PIN.log" 2>&1 || true
+            tail -6 "/tmp/ndk-install-$NDK_PIN.log" || true
           fi
-          if [ ! -f "$SDK_ROOT/ndk/$JNI_PIN/source.properties" ]; then
-            echo "ERROR: NDK $JNI_PIN 安装失败，:jni 一定还会报 NDK not configured"
+          if [ ! -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
+            echo "ERROR: NDK $NDK_PIN 安装失败，:jni 一定还会报 NDK not configured"
             ls -la "$SDK_ROOT/ndk" || true
             exit 1
           fi
@@ -118,8 +118,8 @@ jobs:
               echo "  BAD  $v 缺少 source.properties（AGP 会视为未安装）"
             fi
           done
-          echo "选用 NDK 版本: $JNI_PIN"
-          echo "MELODYFLOW_NDK_VERSION=$JNI_PIN" >> "$GITHUB_ENV"
+          echo "选用 NDK 版本: $NDK_PIN"
+          echo "MELODYFLOW_NDK_VERSION=$NDK_PIN" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
@@ -130,8 +130,20 @@ jobs:
           # 把错误的 sdk.dir 写进 android/local.properties，导致 AGP 在该 SDK 下找不到 NDK。
           flutter config --android-sdk "$SDK_ROOT" || true
           flutter pub get
-          echo "=== android/local.properties（flutter 写入的 sdk.dir 决定 AGP 去哪找 NDK）==="
-          cat android/local.properties || true
+          # local.properties 必须指向同一个 SDK，否则 AGP 会在别处找 NDK。
+          # flutter 自动生成的 local.properties 只保证 sdk.dir + flutter.sdk，
+          # 它可能被本仓库 .gitignore 忽略、也可能被 flutter 覆盖，这里显式补全。
+          FLUTTER_BIN="$(readlink -f "$(command -v flutter)")"
+          FLUTTER_DIR="$(dirname "$(dirname "$FLUTTER_BIN")")"
+          {
+            echo "sdk.dir=$SDK_ROOT"
+            echo "flutter.sdk=$FLUTTER_DIR"
+            echo "# NDK 显式路径：AGP 的 NdkLocator 优先读取 android.ndkPath / ndk.dir，"
+            echo "# 找不到才会去扫 sdk/ndk。CI 上 sdk.dir 一旦错位就是 NDK not configured。"
+            echo "ndk.dir=$SDK_ROOT/ndk/$NDK_PIN"
+          } > android/local.properties
+          echo "=== android/local.properties ==="
+          cat android/local.properties
 
       - name: Clear gradle caches
         run: |

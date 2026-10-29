@@ -41,19 +41,18 @@ jobs:
         run: |
           set +e
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
           echo "SDK_ROOT=$SDK_ROOT"
           echo "FLUTTER_ROOT=$FLUTTER_ROOT"
           # ── 唯一权威来源 ────────────────────────────────────────────────────
-          # Flutter 3.44.9 里 "flutter.ndkVersion" 的真实值写在两个地方，必须一致：
+          # Flutter 3.44.9 里 flutter.ndkVersion 的真实值写在两个地方，必须一致：
           #   packages/flutter_tools/lib/src/android/gradle_utils.dart:69
           #       const ndkVersion = '28.2.13676358';
           #   packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt
           #       val ndkVersion: String = "28.2.13676358"
-          # 之前一直以为 3.44.x 是 27.0.12077973（那是 AGP 8.9 自己的默认 NDK，
+          # 之前一直以为 3.44.x 是 27.0.12077973 —— 那是 AGP 8.9 自己的默认 NDK，
           # 也是报错信息 "Preferred NDK version is '27.0.12077973'" 里那个数字，
-          # 极具误导性），于是 CI 反复安装 27.x，AGP 配置 :jni 时仍然说找不到。
-          # 现在直接从 gradle_utils.dart 里读，读到什么就装什么，绝不硬编码。
+          # 极具误导性。于是 CI 反复安装 27.x，AGP 配置 :jni 时仍然说找不到。
+          # 现在直接从 Flutter 源码里读，读到什么就装什么，绝不硬编码。
           GRADLE_UTILS="$FLUTTER_ROOT/packages/flutter_tools/lib/src/android/gradle_utils.dart"
           FLUTTER_EXT="$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
           FLUTTER_NDK=""
@@ -63,7 +62,7 @@ jobs:
           if [ -z "$FLUTTER_NDK" ] && [ -f "$FLUTTER_EXT" ]; then
             FLUTTER_NDK="$(grep -oE 'val ndkVersion: String = "[0-9.]+"' "$FLUTTER_EXT" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)"
           fi
-          echo "Flutter (flutter.ndkVersion) 声明的 NDK = ${FLUTTER_NDK:-<未探测到>}"
+          echo "Flutter (flutter.ndkVersion) 声明的 NDK = ${FLUTTER_NDK:-未探测到}"
           SDKMGR="$(command -v sdkmanager || true)"
           if [ -z "$SDKMGR" ]; then
             for c in "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/cmdline-tools/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"; do
@@ -77,15 +76,15 @@ jobs:
           fi
           echo "using sdkmanager: $SDKMGR"
           # ── 选版 ────────────────────────────────────────────────────────────
-          # 硬约束（四轮实测得出的结论）：media_kit 传递进来的 :jni 子工程里写死
+          # 硬约束（四轮实测结论）：media_kit 传递进来的 :jni 子工程里写死
           #     ndkVersion = flutter.ndkVersion
           # 而 AGP 在 plugin apply 那一刻就注册了自己的 afterEvaluate
-          # （堆栈：CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks ->
-          # NdkLocatorKt.findNdkPathImpl）并解析定型 NDK。root 侧所有"事后覆盖"都失败：
-          #   · subprojects{} 里直接设       —— 被子工程脚本自己的赋值改回去
-          #   · afterEvaluate 反射 setNdkVersion —— 与 AGP 同阶段，顺序不可控
-          #   · plugins.withId + afterEvaluate  —— 同上
-          #   · gradle.lifecycle.beforeProject  —— 抛
+          # （CrashReporting$afterEvaluate$1 -> BasePlugin.createAndroidTasks ->
+          #  NdkLocatorKt.findNdkPathImpl）并解析定型 NDK。root 侧所有事后覆盖都失败：
+          #   · subprojects{} 里直接设            —— 被子工程脚本自己的赋值改回去
+          #   · afterEvaluate 反射 setNdkVersion  —— 与 AGP 同阶段，顺序不可控
+          #   · plugins.withId + afterEvaluate    —— 同上
+          #   · gradle.lifecycle.beforeProject    —— 抛
           #     "GradleLifecycle#beforeProject cannot be called after settings have been evaluated."
           # 所以不去覆盖，而是保证 SDK 里真的存在 flutter.ndkVersion 这个版本。
           if [ -z "$FLUTTER_NDK" ]; then
@@ -93,7 +92,7 @@ jobs:
             ls -la "$FLUTTER_ROOT/packages/flutter_tools/lib/src/android/" || true
             exit 1
           fi
-          JNI_PIN="$FLUTTER_NDK"
+          NDK_PIN="$FLUTTER_NDK"
           if [ -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
             echo "NDK $NDK_PIN 已注册，直接使用"
           else
@@ -472,42 +471,7 @@ jobs:
           files: |
             android-apk/*
           draft: false
-          prerelease: fals          # 选版策略（第五轮，最终结论）
-          #
-          # 关键事实两个：
-          #   1) pub 包 jni 的 android/build.gradle 第 55 行写的是
-          #          ndkVersion flutter.ndkVersion
-          #      Flutter 3.44.9 的 FlutterExtension.kt 里 val ndkVersion = "28.2.13676358"
-          #      —— 不是 27.0.12077973（那是更早版本 / AGP 默认值）。
-          #   2) AGP 在所有 build 脚本执行【之后】才建 CXX 任务并解析 NDK，
-          #      所以脚本层（subprojects / afterEvaluate / beforeProject）都抢不到，
-          #      而且 gradle.lifecycle.beforeProject 在 settings 求值后调用还会直接抛
-          #      "cannot be called after settings have been evaluated"。
-          # 唯一有效的做法：把 Flutter 真正声明的那个版本从 Kotlin 源码里读出来，
-          # 装进 SDK，并让 MELODYFLOW_NDK_VERSION 与之相同。
-          NDK_PIN=""
-          FLUTTER_PLUGIN_SRC="$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin"
-          if [ -f "$FLUTTER_PLUGIN_SRC/FlutterExtension.kt" ]; then
-            NDK_PIN="$(grep -oE 'val ndkVersion: String = "[^"]+"' "$FLUTTER_PLUGIN_SRC/FlutterExtension.kt" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
-          fi
-          if [ -z "$NDK_PIN" ]; then
-            NDK_PIN="28.2.13676358"
-            echo "WARN: 未能从 FlutterExtension.kt 读出 ndkVersion，退回已知默认值 $NDK_PIN"
-          fi
-          echo "Flutter 声明的 ndkVersion = $NDK_PIN"
-          if [ ! -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
-            echo "=== 安装 NDK $NDK_PIN ==="
-            rm -rf "${SDK_ROOT:?}/ndk/$NDK_PIN" 2>/dev/null || true
-            yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "ndk;$NDK_PIN" > "/tmp/ndk-install-$NDK_PIN.log" 2>&1 || true
-            tail -6 "/tmp/ndk-install-$NDK_PIN.log" || true
-          fi
-          if [ ! -f "$SDK_ROOT/ndk/$NDK_PIN/source.properties" ]; then
-            echo "ERROR: 无法获得 Flutter 要求的 NDK $NDK_PIN"
-            ls -la "$SDK_ROOT/ndk" || true
-            exit 1
-          fi
-          echo "选用 NDK 版本: $NDK_PIN"
-          echo "MELODYFLOW_NDK_VERSION=$NDK_PIN" >> "$GITHUB_ENV"
+          prerelease: false
       - name: Install dependencies
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"

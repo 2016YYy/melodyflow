@@ -11,6 +11,7 @@ on:
         required: true
         default: '1.0.1'
 
+# 2026-10-29: 强制重新注册 workflow（rerun 复用旧定义，必须新 commit 才生效）
 permissions:
   contents: write
 

@@ -201,6 +201,32 @@ subprojects {
         plugins.withId("com.android.application") { bump() }
     }
 }
+
+// 上面 plugins.withId 在部分老插件（用 apply plugin: 而非 plugins {} DSL）上不会触发，
+// 实测 v1.7.0 构建日志里一行 [compileSdk-fix] 都没有。这里再加一道保险：
+// gradle.projectsEvaluated 在全部工程配置完成后、任务图解析前执行，对 compileSdk 足够早。
+gradle.projectsEvaluated {
+    rootProject.subprojects.forEach { sp ->
+        val targetSdk = legacyCompileSdkFixes[sp.name] ?: return@forEach
+        runCatching {
+            val ext = sp.extensions.findByName("android") ?: return@runCatching
+            val current = runCatching {
+                ext.javaClass.getMethod("getCompileSdkVersion").invoke(ext) as? String
+            }.getOrNull()
+            val setter = runCatching {
+                ext.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
+            }.getOrNull() ?: runCatching {
+                ext.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
+            }.getOrNull()
+            if (setter != null) {
+                setter.invoke(ext, targetSdk)
+                sp.logger.lifecycle("[compileSdk-fix] evaluated ${sp.path} was=${current} -> ${targetSdk}")
+            }
+        }.onFailure { e ->
+            sp.logger.lifecycle("[compileSdk-fix] evaluated ${sp.path} failed: ${e.message}")
+        }
+    }
+}
 """
 
 

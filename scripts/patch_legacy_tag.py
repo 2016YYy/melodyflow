@@ -19,8 +19,12 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
      没有 package 属性（或 AGP 8 不再回退读它），AGP 8 要求显式 namespace。
   3) JVM target -- 老插件没有 compileOptions/kotlinOptions，
      JavaCompile 默认 1.8、KotlinCompile 跟随 JDK 17，KGP 一致性校验中断构建。
+  4) 本机代理 -- v1.7.0 / v1.7.1 的 android/gradle.properties 把
+     -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18080 写死在
+     org.gradle.jvmargs 里。runner 上没有这个代理，所有仓库请求连不上，
+     Gradle 把「网络不可达」报成「插件版本不存在」，极难辨认。
 
-本脚本做 0)、2) 和 3)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
+本脚本做 0)、2)、3) 和 4)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
 3) 采用与主线 commit aed5b77 完全相同的落点（root 侧把 JavaCompile 拉到 17 +
 gradle.properties 里把一致性校验降级为 warning），保证新旧版本产物行为一致。
 
@@ -192,6 +196,55 @@ def patch_settings_kts(dry_run):
     return True
 
 
+# 老版本 gradle.properties 的 org.gradle.jvmargs 里硬编码了本机代理，
+# 例如 v1.7.0 / v1.7.1：
+#   org.gradle.jvmargs=-Xmx1536m -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=18080 ...
+# 在 GitHub runner 上 127.0.0.1:18080 没有代理进程，所有仓库请求都连不上，
+# 最终表现为
+#   Plugin [id: 'com.android.application', version: '8.11.1', apply: false]
+#   was not found in any of the following sources
+# —— 看起来像「版本不存在」，实际是「网络被代理指到黑洞」。
+# 这里把代理相关的 -D 参数整段剥掉，其余 jvmargs 保留。
+# 只处理 org.gradle.jvmargs 那一行，且只剥行内参数；不能碰注释里的示例。
+_RE_JVMARGS_LINE = re.compile(r"^(\s*org\.gradle\.jvmargs\s*=.*)$", re.MULTILINE)
+_RE_PROXY_ARG = re.compile(
+    r"\s+-D(?:https?|socks)\.proxy(?:Host|Port|User|Password)=\S+",
+    re.IGNORECASE,
+)
+
+
+def patch_gradle_proxy(dry_run):
+    """剥掉 gradle.properties 里指向本机的高危代理参数。"""
+    if not GRADLE_PROPS.exists():
+        report("!! 找不到 android/gradle.properties，跳过")
+        return False
+
+    src = GRADLE_PROPS.read_text(encoding="utf-8")
+
+    total = 0
+
+    def _clean(match):
+        nonlocal total
+        line = match.group(1)
+        cleaned, n = _RE_PROXY_ARG.subn("", line)
+        total += n
+        return cleaned
+
+    new_src = _RE_JVMARGS_LINE.sub(_clean, src)
+    if total == 0 or new_src == src:
+        report("   gradle.properties 的 jvmargs 无代理参数，跳过")
+        return False
+
+    report("   + 移除 %d 处 jvmargs 代理参数（runner 上 127.0.0.1 无代理，会导致仓库全部解析失败）" % total)
+
+    if dry_run:
+        return True
+
+    GRADLE_PROPS.write_text(new_src, encoding="utf-8")
+    report("   android/gradle.properties 已清理代理参数")
+    return True
+
+
 def patch_build_kts(dry_run):
     if not BUILD_KTS.exists():
         report("!! 找不到 android/build.gradle.kts，跳过")
@@ -284,6 +337,7 @@ def main():
 
     changed = False
     changed |= patch_settings_kts(args.check)
+    changed |= patch_gradle_proxy(args.check)
     changed |= patch_build_kts(args.check)
     changed |= patch_gradle_props(args.check)
 

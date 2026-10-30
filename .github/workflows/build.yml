@@ -573,12 +573,33 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      # release_template.md 是跟着 tag 一起提交的，旧 tag 里那份写的是当年的版本号。
+      # 直接 body_path 引用会让补建出来的 Release 标题/资产名全是错的 —— 实测 v1.7.0 的
+      # Release 正文标题写着「MelodyFlow v1.7.1」、下载表写 melodyflow-v1.7.1-android.apk。
+      # 这里先把模板里的版本号统一替换成本次发布的目标版本，再交给 action-gh-release 读。
+      - name: Render release body
+        run: |
+          set -e
+          VERSION="${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}"
+          SRC=".github/release_template.md"
+          OUT="$RUNNER_TEMP/release_body.md"
+          if [ ! -f "$SRC" ]; then
+            echo "ERROR: 缺少 $SRC"
+            exit 1
+          fi
+          echo "=== 渲染 $SRC -> $OUT （目标版本 $VERSION） ==="
+          grep -nE 'v[0-9]+\.[0-9]+\.[0-9]+' "$SRC" | head -20 || true
+          sed -E "s/v[0-9]+\.[0-9]+\.[0-9]+/${VERSION}/g" "$SRC" > "$OUT"
+          echo "=== 渲染后 ==="
+          head -1 "$OUT"
+          echo "BODY_PATH=$OUT" >> "$GITHUB_ENV"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}
           name: MelodyFlow ${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}
-          body_path: .github/release_template.md
+          body_path: ${{ env.BODY_PATH }}
           # 只上传实际启用的产物。windows-zip / ios-ipa 当前 job 是 if: false，
           # 列在这里会让 action-gh-release 因找不到文件而失败。
           files: |

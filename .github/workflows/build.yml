@@ -59,7 +59,14 @@ jobs:
       - name: Patch legacy build config
         run: |
           set -e
-          python3 scripts/patch_legacy_tag.py
+          # checkout 出来的是 build_ref 指定的老 ref，它自己的 scripts/ 里没有这个补丁脚本
+          # （脚本是本轮才加的）。所以从远端分支把工具脚本单独取过来，不改动老 ref 的业务代码。
+          SCRIPT_DIR="$RUNNER_TEMP/legacy-patch"
+          mkdir -p "$SCRIPT_DIR"
+          git fetch --depth=1 origin "+refs/heads/main:refs/remotes/origin/main"
+          git show origin/main:scripts/patch_legacy_tag.py > "$SCRIPT_DIR/patch_legacy_tag.py"
+          echo "补丁脚本 $(wc -c < "$SCRIPT_DIR/patch_legacy_tag.py") bytes"
+          python3 "$SCRIPT_DIR/patch_legacy_tag.py"
           echo "=== 补丁后 diff ==="
           git --no-pager diff --stat || true
 

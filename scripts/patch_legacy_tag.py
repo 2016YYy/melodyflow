@@ -6,6 +6,12 @@
 melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为当时 CI 失败。
 失败点全部是构建环境对新工具链的适配，与业务代码无关：
 
+  0) AGP / KGP 版本 -- v1.6.0 与 v1.7.0 的 settings.gradle.kts 写了
+     com.android.application 9.1.0 / 9.0.1 与 org.jetbrains.kotlin.android
+     2.4.0 / 2.3.20。Google Maven 里不存在这些 AGP 版本，解析阶段直接失败：
+       Plugin [id: 'com.android.application', version: '9.0.1', apply: false]
+       was not found in any of the following sources
+     这是当年 v1.6.0 / v1.7.0 根本没产出 Release 的根因。
   1) NDK 版本 -- app/build.gradle.kts 写 ndkVersion = flutter.ndkVersion，
      Flutter 3.44.9 给出 28.2.13676358，而 runner 只预装 27.x。
      CI 侧的安装步骤已处理，无需改文件。
@@ -14,7 +20,7 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
   3) JVM target -- 老插件没有 compileOptions/kotlinOptions，
      JavaCompile 默认 1.8、KotlinCompile 跟随 JDK 17，KGP 一致性校验中断构建。
 
-本脚本只做 2) 和 3)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
+本脚本做 0)、2) 和 3)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
 3) 采用与主线 commit aed5b77 完全相同的落点（root 侧把 JavaCompile 拉到 17 +
 gradle.properties 里把一致性校验降级为 warning），保证新旧版本产物行为一致。
 
@@ -27,6 +33,7 @@ gradle.properties 里把一致性校验降级为 warning），保证新旧版本
 
 import argparse
 import pathlib
+import re
 import sys
 
 # 默认以脚本自身位置推断项目根（脚本位于 <root>/scripts/ 下）。
@@ -39,11 +46,13 @@ GRADLE_PROPS = ANDROID / "gradle.properties"
 
 def set_root(root):
     """把全局路径重定向到指定项目根目录。"""
-    global ROOT, ANDROID, BUILD_KTS, GRADLE_PROPS
+    global ROOT, ANDROID, BUILD_KTS, GRADLE_PROPS, SETTINGS_KTS
     ROOT = pathlib.Path(root).resolve()
     ANDROID = ROOT / "android"
     BUILD_KTS = ANDROID / "build.gradle.kts"
     GRADLE_PROPS = ANDROID / "gradle.properties"
+    SETTINGS_KTS = ANDROID / "settings.gradle.kts"
+SETTINGS_KTS = ANDROID / "settings.gradle.kts"
 
 MARKER_NAMESPACE = "[patch_legacy_tag] 老插件 namespace"
 MARKER_JVM = "[patch_legacy_tag] 老插件 JVM target"
@@ -131,6 +140,56 @@ kotlin.jvm.target.validation.mode=warning
 
 def report(msg):
     print(msg, flush=True)
+
+
+# 与 main 上已验证可用的组合对齐（见 android/settings.gradle.kts 的注释）。
+# 选 8.11.1 / 2.2.20 而不是更新的版本，是因为 Flutter 3.44.9 自带的
+# flutter_tools/gradle 就是按这一对编译的，换别的反而可能对不上。
+TARGET_AGP = "8.11.1"
+TARGET_KGP = "2.2.20"
+
+# 只替换这几行里的版本号，其余内容（仓库配置、注释、flutter-plugin-loader）原样保留。
+_RE_AGP = re.compile(r'(id\("com\.android\.application"\)\s+version\s+")[^"]+(")')
+_RE_KGP = re.compile(r'(id\("org\.jetbrains\.kotlin\.android"\)\s+version\s+")[^"]+(")')
+
+
+def patch_settings_kts(dry_run):
+    """把不存在的 AGP / KGP 版本改回 main 上已验证可用的组合。
+
+    v1.6.0 的 settings.gradle.kts 写 com.android.application 9.1.0 + kotlin 2.4.0，
+    v1.7.0 写 9.0.1 + 2.3.20。Google Maven 里没有这些 AGP 版本，
+    Gradle 在 settings 阶段就报 Plugin [...] was not found，一个字节都编译不出来。
+    这是这两个版本当年没有 Release 的真正原因。
+    """
+    if not SETTINGS_KTS.exists():
+        report("!! 找不到 android/settings.gradle.kts，跳过")
+        return False
+
+    src = SETTINGS_KTS.read_text(encoding="utf-8")
+    new_src = _RE_AGP.sub(lambda m: m.group(1) + TARGET_AGP + m.group(2), src)
+    new_src = _RE_KGP.sub(lambda m: m.group(1) + TARGET_KGP + m.group(2), new_src)
+
+    if new_src == src:
+        report("   AGP / KGP 版本已是 %s / %s，跳过" % (TARGET_AGP, TARGET_KGP))
+        return False
+
+    for label, pattern in (("AGP", _RE_AGP), ("KGP", _RE_KGP)):
+        old = pattern.search(src)
+        new = pattern.search(new_src)
+        if old and new and old.group(1) + old.group(2) != new.group(1) + new.group(2):
+            report("   + %s %s -> %s" % (
+                label,
+                src[old.start():old.end()].split('"')[1],
+                new_src[new.start():new.end()].split('"')[1],
+            ))
+
+    if dry_run:
+        report("   [dry-run] 将改写 android/settings.gradle.kts")
+        return True
+
+    SETTINGS_KTS.write_text(new_src, encoding="utf-8")
+    report("   android/settings.gradle.kts 已更新")
+    return True
 
 
 def patch_build_kts(dry_run):
@@ -224,6 +283,7 @@ def main():
         return 1
 
     changed = False
+    changed |= patch_settings_kts(args.check)
     changed |= patch_build_kts(args.check)
     changed |= patch_gradle_props(args.check)
 

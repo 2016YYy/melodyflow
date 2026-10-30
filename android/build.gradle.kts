@@ -156,25 +156,33 @@ val legacyJvmTargetFixes = setOf(
 
 allprojects {
     if (legacyJvmTargetFixes.contains(name)) {
-        // 1) KotlinCompile 任务：把 jvmTarget 钉到 1.8
+        // Kotlin Gradle Plugin 2.2.20 已经把 kotlinOptions DSL 升级为硬错误：
+        //   "Using 'kotlinOptions: KotlinJvmOptions' is an error. Please migrate to the compilerOptions DSL."
+        // 所以这里只能走 4.x 的 compilerOptions DSL，并且用反射设置 JvmTarget
+        // （root 脚本里没法直接引用 org.jetbrains.kotlin.gradle.dsl.JvmTarget 枚举，
+        //  那个类属于 :app 的 plugin classpath，root buildscript 不可见）。
+        //
+        // 1) KotlinCompile：compilerOptions.jvmTarget
         tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).configureEach {
-            kotlinOptions.jvmTarget = "1.8"
+            runCatching {
+                val compilerOptions = javaClass.getMethod("getCompilerOptions").invoke(this)
+                val jvmTargetProp = compilerOptions.javaClass.getMethod("getJvmTarget").invoke(compilerOptions)
+                if (jvmTargetProp == null) {
+                    val enumClass = Class.forName("org.jetbrains.kotlin.gradle.dsl.JvmTarget")
+                    val target = enumClass.getMethod("fromTarget", String::class.java).invoke(null, "1.8")
+                    compilerOptions.javaClass
+                        .getMethod("setJvmTarget", Class.forName("org.jetbrains.kotlin.gradle.dsl.JvmTarget"))
+                        .invoke(compilerOptions, target)
+                    println("[jvm-target] ${path} compilerOptions.jvmTarget -> 1.8")
+                }
+            }.onFailure { e ->
+                println("[jvm-target] ${path} compilerOptions skipped: ${e.message}")
+            }
         }
-        // 2) JavaCompile 任务：把 source/target 钉到 1.8（KGP 校验同时看 releaseCompatibility）
+        // 2) JavaCompile：source/target 也为 1.8，与 Kotlin 侧一致
         tasks.withType(org.gradle.api.tasks.compile.JavaCompile::class.java).configureEach {
             sourceCompatibility = "1.8"
             targetCompatibility = "1.8"
-        }
-        // 3) Kotlin 扩展的编译选项（KGP 2.x 走 compilerOptions，1.x 走 kotlinOptions）
-        plugins.withId("org.jetbrains.kotlin.android") {
-            runCatching {
-                val androidExt = extensions.findByName("android")
-                val kotlinOptions = androidExt?.javaClass?.getMethod("getKotlinOptions")?.invoke(androidExt)
-                kotlinOptions?.javaClass?.getMethod("setJvmTarget", String::class.java)?.invoke(kotlinOptions, "1.8")
-                println("[jvm-target] ${path} android.kotlinOptions.jvmTarget = 1.8")
-            }.onFailure { e ->
-                println("[jvm-target] ${path} kotlinOptions skipped: ${e.message}")
-            }
         }
     }
 }

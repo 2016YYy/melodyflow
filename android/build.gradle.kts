@@ -138,6 +138,47 @@ fun ensureNamespace(proj: Project, fixedNamespace: String?) {
     if (proj.state.executed) apply() else proj.afterEvaluate { apply() }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 老包的 JVM Target 对齐（Kotlin 1.8 vs Java 17）
+//
+// 现象（:on_audio_query_android:compileReleaseKotlin）：
+//   Inconsistent JVM-target compatibility detected for tasks
+//     'compileReleaseJavaWithJavac' (1.8) and 'compileReleaseKotlin' (17).
+//
+// 根因：root 用 JDK 17 跑 Gradle，JavaCompile 默认 source/target 取 JDK 版本（近版本 AGP
+// 会把它压到 1.8，但 KotlinCompile 用的是 KGP 自己的 jvmTarget 默认值 = 当前 JVM = 17）。
+// on_audio_query_android 的 build.gradle 只写 apply plugin: 'kotlin-android'，没有
+// compileOptions / kotlinOptions，于是两边默认值打架，KGP 1.6+ 的校验直接报错。
+// 只能在 root 侧把两者统一到 1.8（老代码用不到 17 的语言特性，1.8 兼容面最广）。
+val legacyJvmTargetFixes = setOf(
+    "on_audio_query_android",
+)
+
+allprojects {
+    if (legacyJvmTargetFixes.contains(name)) {
+        // 1) KotlinCompile 任务：把 jvmTarget 钉到 1.8
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).configureEach {
+            kotlinOptions.jvmTarget = "1.8"
+        }
+        // 2) JavaCompile 任务：把 source/target 钉到 1.8（KGP 校验同时看 releaseCompatibility）
+        tasks.withType(org.gradle.api.tasks.compile.JavaCompile::class.java).configureEach {
+            sourceCompatibility = "1.8"
+            targetCompatibility = "1.8"
+        }
+        // 3) Kotlin 扩展的编译选项（KGP 2.x 走 compilerOptions，1.x 走 kotlinOptions）
+        plugins.withId("org.jetbrains.kotlin.android") {
+            runCatching {
+                val androidExt = extensions.findByName("android")
+                val kotlinOptions = androidExt?.javaClass?.getMethod("getKotlinOptions")?.invoke(androidExt)
+                kotlinOptions?.javaClass?.getMethod("setJvmTarget", String::class.java)?.invoke(kotlinOptions, "1.8")
+                println("[jvm-target] ${path} android.kotlinOptions.jvmTarget = 1.8")
+            }.onFailure { e ->
+                println("[jvm-target] ${path} kotlinOptions skipped: ${e.message}")
+            }
+        }
+    }
+}
+
 // 已知缺 namespace 的第三方包：显式写死，避免依赖 manifest 推导（AGP 8 不再推导）。
 val legacyNamespaceFixes = mapOf(
     "on_audio_query_android" to "com.lucasjosino.on_audio_query",

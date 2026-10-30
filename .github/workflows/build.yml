@@ -10,6 +10,10 @@ on:
         description: '版本号 (如 1.0.1)'
         required: true
         default: '1.0.1'
+      build_ref:
+        description: '要构建的 ref（留空=当前分支/标签）。补建历史版本的 Release 时填该 tag，例如 v1.7.1'
+        required: false
+        default: ''
 
 # 2026-10-29: 强制重新注册 workflow（rerun 复用旧定义，必须新 commit 才生效）
 permissions:
@@ -20,7 +24,20 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-latest
     steps:
+      # 手动 dispatch 时若填了 build_ref，就检出那个 ref；否则检出发起运行的分支/标签。
+      # 用途：历史 tag（如 v1.7.0 / v1.7.1）当年的 workflow 里没有下方的补丁步骤，
+      # 直接用 tag 重跑必然复现当年的失败。改成「用 main 的最新 workflow + 检出老 ref 的代码」，
+      # 既不重写历史 tag，又能让老版本按现在的构建环境重新打包。
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.build_ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Mark build ref
+        run: |
+          echo "BUILD_REF=${{ github.event.inputs.build_ref }}" >> "$GITHUB_ENV"
+          echo "checkout ref = ${{ github.event.inputs.build_ref || github.ref }}"
+          git log --oneline -1
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -33,6 +50,18 @@ jobs:
         with:
           flutter-version: '3.44.9'
           channel: 'stable'
+
+      # 老 ref（build_ref 非空）的代码树里没有后来才补上的构建适配，
+      # 直接构建必然复现当年失败。这里在 checkout 之后、编译之前补齐：
+      #   · 缺 namespace 的老插件（AGP 8 强制要求）
+      #   · 缺 compileOptions 的老插件导致的 JVM target 不一致
+      # 脚本是幂等的：检测到已修过就跳过，所以在最新代码上是零改动。
+      - name: Patch legacy build config
+        run: |
+          set -e
+          python3 scripts/patch_legacy_tag.py
+          echo "=== 补丁后 diff ==="
+          git --no-pager diff --stat || true
 
       # app/build.gradle.kts 里 ndkVersion = flutter.ndkVersion（Flutter 3.44.9 对应
       # 27.0.12077973）。runner 镜像不保证预装该版本，缺失时 AGP 在配置 :app 阶段直接报
@@ -388,7 +417,7 @@ jobs:
 
       - name: Rename APK
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}"
           cp build/app/outputs/flutter-apk/app-release.apk melodyflow-${VERSION}-android.apk
           cp build/app/outputs/flutter-apk/app-release.apk.sha256 melodyflow-${VERSION}-android.apk.sha256
 
@@ -418,7 +447,7 @@ jobs:
 
       - name: Package
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}"
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath melodyflow-${VERSION}-windows.zip
 
       - uses: actions/upload-artifact@v4
@@ -447,7 +476,7 @@ jobs:
 
       - name: Package IPA
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}"
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -R Runner.app Payload/
@@ -462,9 +491,12 @@ jobs:
     name: Create GitHub Release
     # 仅依赖实际启用的构建产物；windows/ios 当前以 `if: false` 临时禁用，不应阻塞发布
     needs: [build-android]
-    # 发布动作只允许由 tag 推送触发：手动 workflow_dispatch 仅用于验证构建，
+    # 两种允许发布的情形：
+    #   1) tag 推送触发（正式发版）
+    #   2) workflow_dispatch 且填了 build_ref（补建历史版本的 Release）
+    # 普通 workflow_dispatch（只填 version、不填 build_ref）仍然只验证构建，不发布，
     # 防止一次验证运行就把半成品产物发布成正式 Release。
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_ref != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -475,8 +507,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: MelodyFlow ${{ github.event.inputs.version || github.ref_name }}
+          tag_name: ${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}
+          name: MelodyFlow ${{ github.event.inputs.build_ref || github.event.inputs.version || github.ref_name }}
           body_path: .github/release_template.md
           # 只上传实际启用的产物。windows-zip / ios-ipa 当前 job 是 if: false，
           # 列在这里会让 action-gh-release 因找不到文件而失败。

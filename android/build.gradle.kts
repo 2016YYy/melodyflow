@@ -139,50 +139,41 @@ fun ensureNamespace(proj: Project, fixedNamespace: String?) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 老包的 JVM Target 对齐（Kotlin 1.8 vs Java 17）
+// 老包的 JVM Target 对齐（Kotlin 17 vs Java 1.8）
 //
 // 现象（:on_audio_query_android:compileReleaseKotlin）：
 //   Inconsistent JVM-target compatibility detected for tasks
 //     'compileReleaseJavaWithJavac' (1.8) and 'compileReleaseKotlin' (17).
 //
-// 根因：root 用 JDK 17 跑 Gradle，JavaCompile 默认 source/target 取 JDK 版本（近版本 AGP
-// 会把它压到 1.8，但 KotlinCompile 用的是 KGP 自己的 jvmTarget 默认值 = 当前 JVM = 17）。
-// on_audio_query_android 的 build.gradle 只写 apply plugin: 'kotlin-android'，没有
-// compileOptions / kotlinOptions，于是两边默认值打架，KGP 1.6+ 的校验直接报错。
-// 只能在 root 侧把两者统一到 1.8（老代码用不到 17 的语言特性，1.8 兼容面最广）。
+// 根因：root 用 JDK 17 跑 Gradle，KotlinCompile 的 jvmTarget 默认取当前 JVM = 17，
+// 而该包 AGP 侧 JavaCompile 的 source/target 被压到 1.8。on_audio_query_android 的
+// build.gradle 只写 apply plugin: 'kotlin-android'，没有任何 compileOptions/kotlinOptions，
+// 于是两边默认值打架，KGP 的一致性校验直接中断构建。
+//
+// 尝试过但无效的做法（留档，别再走一遍）：
+//   a) 反射 getCompilerOptions().setJvmTarget(...) —— 在 allprojects{} 里此时
+//      KotlinCompile 还没创建，configureEach 拿到的是"配置完成后的空壳"，
+//      且 KGP 2.2.20 的 compilerOptions 反射路径拿不到 JvmTarget 枚举；
+//   b) 任务级 doFirst 改 —— 一致性校验发生在任务执行前的 eager 阶段，太晚。
+//
+// 真正可靠的落点：**在 :on_audio_query_android 自己的工作目录里放一份 gradle.properties**，
+// 不行 —— pub-cache 是只读缓存，每次 pub get 会重建。
+// 因此改为：Gradle 命令行层面统一 JVM 目标（见 CI 的 -Dorg.gradle.java.installations
+// 与 org.gradle.jvmargs 之外的做法）—— 用 kotlin.jvm.target.validation.mode=warning
+// 把这条校验降级为警告，再让 JavaCompile 跟上 Kotlin 的 17，产出仍兼容（AGP 8 支持 Java 17 字节码）。
+//
+// 具体两步：
+//   1) 在 android/gradle.properties 写 kotlin.jvm.target.validation.mode=warning；
+//   2) 这里给该子项目的 JavaCompile 显式设成 17，与 Kotlin 侧一致，避免真的产出混合版本。
 val legacyJvmTargetFixes = setOf(
     "on_audio_query_android",
 )
 
 allprojects {
     if (legacyJvmTargetFixes.contains(name)) {
-        // Kotlin Gradle Plugin 2.2.20 已经把 kotlinOptions DSL 升级为硬错误：
-        //   "Using 'kotlinOptions: KotlinJvmOptions' is an error. Please migrate to the compilerOptions DSL."
-        // 所以这里只能走 4.x 的 compilerOptions DSL，并且用反射设置 JvmTarget
-        // （root 脚本里没法直接引用 org.jetbrains.kotlin.gradle.dsl.JvmTarget 枚举，
-        //  那个类属于 :app 的 plugin classpath，root buildscript 不可见）。
-        //
-        // 1) KotlinCompile：compilerOptions.jvmTarget
-        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).configureEach {
-            runCatching {
-                val compilerOptions = javaClass.getMethod("getCompilerOptions").invoke(this)
-                val jvmTargetProp = compilerOptions.javaClass.getMethod("getJvmTarget").invoke(compilerOptions)
-                if (jvmTargetProp == null) {
-                    val enumClass = Class.forName("org.jetbrains.kotlin.gradle.dsl.JvmTarget")
-                    val target = enumClass.getMethod("fromTarget", String::class.java).invoke(null, "1.8")
-                    compilerOptions.javaClass
-                        .getMethod("setJvmTarget", Class.forName("org.jetbrains.kotlin.gradle.dsl.JvmTarget"))
-                        .invoke(compilerOptions, target)
-                    println("[jvm-target] ${path} compilerOptions.jvmTarget -> 1.8")
-                }
-            }.onFailure { e ->
-                println("[jvm-target] ${path} compilerOptions skipped: ${e.message}")
-            }
-        }
-        // 2) JavaCompile：source/target 也为 1.8，与 Kotlin 侧一致
         tasks.withType(org.gradle.api.tasks.compile.JavaCompile::class.java).configureEach {
-            sourceCompatibility = "1.8"
-            targetCompatibility = "1.8"
+            sourceCompatibility = "17"
+            targetCompatibility = "17"
         }
     }
 }

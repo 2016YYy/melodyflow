@@ -19,6 +19,9 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
      没有 package 属性（或 AGP 8 不再回退读它），AGP 8 要求显式 namespace。
   3) JVM target -- 老插件没有 compileOptions/kotlinOptions，
      JavaCompile 默认 1.8、KotlinCompile 跟随 JDK 17，KGP 一致性校验中断构建。
+  6) Properties 短名 -- app/build.gradle.kts 里写 java.util.Properties() 时，
+     kts 把 java 解析成 Gradle 的 java 扩展而非包名，报 Unresolved reference: util，
+     连带 load() / isNotBlank() 一起失效。改成顶部 import + Properties()。
   5) Gradle 版本 -- v1.7.0 的 wrapper 指向 gradle-9.8.1，而 Gradle 9.6.0 起
      移除了 AGP 8.x 依赖的 org.gradle.api.problems.internal.InternalProblems，
      报 "relies on ... a Gradle internal API that was removed in Gradle 9.6.0"。
@@ -28,7 +31,7 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
      org.gradle.jvmargs 里。runner 上没有这个代理，所有仓库请求连不上，
      Gradle 把「网络不可达」报成「插件版本不存在」，极难辨认。
 
-本脚本做 0)、2)、3)、4) 和 5)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
+本脚本做 0)、2)、3)、4)、5) 和 6)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
 3) 采用与主线 commit aed5b77 完全相同的落点（root 侧把 JavaCompile 拉到 17 +
 gradle.properties 里把一致性校验降级为 warning），保证新旧版本产物行为一致。
 
@@ -49,15 +52,17 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ANDROID = ROOT / "android"
 BUILD_KTS = ANDROID / "build.gradle.kts"
+APP_BUILD_KTS = ANDROID / "app" / "build.gradle.kts"
 GRADLE_PROPS = ANDROID / "gradle.properties"
 
 
 def set_root(root):
     """把全局路径重定向到指定项目根目录。"""
-    global ROOT, ANDROID, BUILD_KTS, GRADLE_PROPS, SETTINGS_KTS, WRAPPER_PROPS
+    global ROOT, ANDROID, BUILD_KTS, APP_BUILD_KTS, GRADLE_PROPS, SETTINGS_KTS, WRAPPER_PROPS
     ROOT = pathlib.Path(root).resolve()
     ANDROID = ROOT / "android"
     BUILD_KTS = ANDROID / "build.gradle.kts"
+    APP_BUILD_KTS = ANDROID / "app" / "build.gradle.kts"
     GRADLE_PROPS = ANDROID / "gradle.properties"
     SETTINGS_KTS = ANDROID / "settings.gradle.kts"
     WRAPPER_PROPS = ANDROID / "gradle" / "wrapper" / "gradle-wrapper.properties"
@@ -296,6 +301,56 @@ def patch_gradle_wrapper(dry_run):
     return True
 
 
+# 老版本 android/app/build.gradle.kts 里写的是 java.util.Properties()。
+# 在 .gradle.kts 脚本里，`java` 会被解析成 Gradle 的 java 扩展
+# （JavaPluginExtension）而不是包名，于是报：
+#   Line 26: val localProps = java.util.Properties().apply {
+#                                     ^ Unresolved reference: util
+#   Line 28:     if (f.exists()) f.inputStream().use { load(it) }
+#                                        ^ Unresolved reference: load
+#   Line 32:     ?: localProps.getProperty(propKey)?.takeIf { it.isNotBlank() }
+#                                                                 ^ Unresolved reference: it
+# 修法（与 main 上已验证的写法一致）：脚本顶部 import java.util.Properties，
+# 并把 java.util.Properties() 改成 Properties()。
+# 只匹配真实代码，不匹配以 // 开头的注释（main / v1.7.1 的注释里就有这个写法，
+# 早期版本全局替换会把注释一起改掉，导致"已经修过还报需要修"）。
+_RE_JAVA_UTIL_PROPERTIES = re.compile(r"^(?!\s*//).*?java\.util\.Properties\(\)", re.MULTILINE)
+_RE_IMPORT_PROPERTIES = re.compile(r"^\s*import\s+java\.util\.Properties\s*$", re.MULTILINE)
+
+
+def patch_app_build_kts(dry_run):
+    """修 app/build.gradle.kts 里 java.util.Properties() 的 Unresolved reference。"""
+    if not APP_BUILD_KTS.exists():
+        report("!! 找不到 android/app/build.gradle.kts，跳过")
+        return False
+
+    src = APP_BUILD_KTS.read_text(encoding="utf-8")
+
+    if not _RE_JAVA_UTIL_PROPERTIES.search(src):
+        report("   app/build.gradle.kts 无 java.util.Properties()，跳过")
+        return False
+
+    new_src, n = re.subn(
+        r"(^(?!\s*//)[^\n]*?)java\.util\.Properties\(\)",
+        lambda m: m.group(1) + "Properties()",
+        src,
+        flags=re.MULTILINE,
+    )
+
+    # 需要 import 才能用短名；已有则不再重复加。
+    if not _RE_IMPORT_PROPERTIES.search(new_src):
+        new_src = "import java.util.Properties\n\n" + new_src
+        report("   + 顶部补 import java.util.Properties")
+    report("   + java.util.Properties() -> Properties()")
+
+    if dry_run:
+        return True
+
+    APP_BUILD_KTS.write_text(new_src, encoding="utf-8")
+    report("   android/app/build.gradle.kts 已更新")
+    return True
+
+
 def patch_build_kts(dry_run):
     if not BUILD_KTS.exists():
         report("!! 找不到 android/build.gradle.kts，跳过")
@@ -391,6 +446,7 @@ def main():
     changed |= patch_gradle_wrapper(args.check)
     changed |= patch_gradle_proxy(args.check)
     changed |= patch_build_kts(args.check)
+    changed |= patch_app_build_kts(args.check)
     changed |= patch_gradle_props(args.check)
 
     if args.check:

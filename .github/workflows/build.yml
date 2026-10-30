@@ -158,6 +158,46 @@ jobs:
           echo "选用 NDK 版本: $NDK_PIN"
           echo "MELODYFLOW_NDK_VERSION=$NDK_PIN" >> "$GITHUB_ENV"
 
+      # 老插件 on_audio_query_android 1.1.0 的 android/build.gradle 写死 compileSdkVersion 33，
+      # GitHub 镜像只预装 Flutter 需要的平台（36 等），没有 33，于是报：
+      #   Failed to find target with hash string 'android-33' in: $ANDROID_SDK_ROOT
+      # root 侧的反射兜底（legacyCompileSdkFixes）实测在 v1.7.0 上不生效 ——
+      # 无论 plugins.withId 还是 gradle.projectsEvaluated，日志里一行 [compileSdk-fix] 都没有，
+      # 说明这个老包的 compileSdk 在更早的 DSL 求值阶段就被固化了。
+      # 与其继续反射，不如直接把 android-33 平台装进 SDK：确定性最强，也不碰插件源码。
+      - name: Ensure legacy SDK platforms
+        run: |
+          set +e
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            for c in "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/cmdline-tools/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"; do
+              if [ -x "$c" ]; then SDKMGR="$c"; break; fi
+            done
+          fi
+          if [ -z "$SDKMGR" ]; then
+            echo "ERROR: sdkmanager not found under $SDK_ROOT"
+            exit 1
+          fi
+          echo "=== 现有 platforms ==="
+          ls -1 "$SDK_ROOT/platforms" 2>/dev/null || true
+          for P in 33; do
+            if [ -f "$SDK_ROOT/platforms/android-$P/source.properties" ] || [ -f "$SDK_ROOT/platforms/android-$P/android.jar" ]; then
+              echo "platform android-$P 已存在，跳过"
+            else
+              echo "=== 安装 platforms;android-$P ==="
+              yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "platforms;android-$P" > "/tmp/sdk-platform-$P.log" 2>&1 || true
+              tail -5 "/tmp/sdk-platform-$P.log" || true
+            fi
+            if [ -d "$SDK_ROOT/platforms/android-$P" ]; then
+              echo "  OK   android-$P 就位"
+            else
+              echo "  WARN android-$P 仍缺失（构建可能失败）"
+            fi
+          done
+          echo "=== 最终 platforms ==="
+          ls -1 "$SDK_ROOT/platforms" 2>/dev/null || true
+
       - name: Install dependencies
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"

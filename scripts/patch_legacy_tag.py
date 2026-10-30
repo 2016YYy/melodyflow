@@ -19,6 +19,10 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
      没有 package 属性（或 AGP 8 不再回退读它），AGP 8 要求显式 namespace。
   3) JVM target -- 老插件没有 compileOptions/kotlinOptions，
      JavaCompile 默认 1.8、KotlinCompile 跟随 JDK 17，KGP 一致性校验中断构建。
+  7) compileSdk -- on_audio_query_android 写死 compileSdkVersion 33，
+     runner 上没有 android-33 平台，报
+       Failed to find target with hash string 'android-33'
+     在 root 侧把它的 compileSdk 抬到 36（pub-cache 只读，不能改插件源码）。
   6) Properties 短名 -- app/build.gradle.kts 里写 java.util.Properties() 时，
      kts 把 java 解析成 Gradle 的 java 扩展而非包名，报 Unresolved reference: util，
      连带 load() / isNotBlank() 一起失效。改成顶部 import + Properties()。
@@ -31,7 +35,7 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
      org.gradle.jvmargs 里。runner 上没有这个代理，所有仓库请求连不上，
      Gradle 把「网络不可达」报成「插件版本不存在」，极难辨认。
 
-本脚本做 0)、2)、3)、4)、5) 和 6)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
+本脚本做 0)、2)、3)、4)、5)、6) 和 7)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
 3) 采用与主线 commit aed5b77 完全相同的落点（root 侧把 JavaCompile 拉到 17 +
 gradle.properties 里把一致性校验降级为 warning），保证新旧版本产物行为一致。
 
@@ -72,6 +76,7 @@ SETTINGS_KTS = ANDROID / "settings.gradle.kts"
 MARKER_NAMESPACE = "[patch_legacy_tag] 老插件 namespace"
 MARKER_JVM = "[patch_legacy_tag] 老插件 JVM target"
 MARKER_PROP = "kotlin.jvm.target.validation.mode=warning"
+MARKER_SDK = "[patch_legacy_tag] 老插件 compileSdk"
 
 NAMESPACE_BLOCK = """
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,6 +155,52 @@ PROP_BLOCK = """
 # root build.gradle.kts 已经把该子项目的 JavaCompile 拉到 17，这条降级只作为兜底，
 # 防止将来再冒出的同类老包直接打断 CI。
 kotlin.jvm.target.validation.mode=warning
+"""
+
+
+COMPILE_SDK_BLOCK = r"""
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [patch_legacy_tag] 老插件 compileSdk 兜底
+//
+// on_audio_query_android 1.1.0 的 android/build.gradle 写死
+//   android { compileSdkVersion 33 }
+// GitHub runner 上只装了 Flutter 3.44.9 需要的 SDK 平台（36 等），没有 33，于是报：
+//   Could not determine the dependencies of task
+//   ':on_audio_query_android:compileReleaseJavaWithJavac'.
+//   > Failed to find target with hash string 'android-33' in: $ANDROID_HOME
+// pub-cache 是只读缓存，每次 pub get 都会重建，不能改插件源码；
+// 只能在 root 侧于 VariantBuilder 创建之前，把它的 android.compileSdkVersion 抬到 36。
+val legacyCompileSdkFixes = mapOf(
+    "on_audio_query_android" to 36,
+)
+
+subprojects {
+    if (legacyCompileSdkFixes.containsKey(name)) {
+        val targetSdk = legacyCompileSdkFixes.getValue(name)
+        val bump = {
+            runCatching {
+                val ext = project.extensions.findByName("android") ?: return@runCatching
+                // AGP 8.x 的 CommonExtension 有 setCompileSdk(Int)，老属性是 compileSdkVersion(Int)
+                val setter = runCatching {
+                    ext.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
+                }.getOrNull() ?: runCatching {
+                    ext.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
+                }.getOrNull()
+                if (setter == null) {
+                    project.logger.lifecycle("[compileSdk-fix] ${project.path} 找不到 setCompileSdk，跳过")
+                } else {
+                    setter.invoke(ext, targetSdk)
+                    project.logger.lifecycle("[compileSdk-fix] ${project.path} -> $targetSdk")
+                }
+            }.onFailure { e ->
+                project.logger.lifecycle("[compileSdk-fix] ${project.path} skipped: ${e.message}")
+            }
+        }
+        plugins.withId("com.android.library") { bump() }
+        plugins.withId("com.android.application") { bump() }
+    }
+}
 """
 
 
@@ -374,6 +425,7 @@ def patch_build_kts(dry_run):
     has_jvm_fix = MARKER_JVM in src or (
         "legacyJvmTargetFixes" in src and "JavaCompile" in src
     )
+    has_sdk_fix = MARKER_SDK in src or "legacyCompileSdkFixes" in src
 
     if has_namespace_fix:
         report("   namespace 兜底已存在，跳过")
@@ -388,6 +440,13 @@ def patch_build_kts(dry_run):
         pieces.append(JVM_BLOCK)
         changed = True
         report("   + 注入 JVM target 对齐")
+
+    if has_sdk_fix:
+        report("   compileSdk 兜底已存在，跳过")
+    else:
+        pieces.append(COMPILE_SDK_BLOCK)
+        changed = True
+        report("   + 注入 compileSdk 兜底（老插件写死 33，runner 上没有该平台）")
 
     if not changed:
         return False

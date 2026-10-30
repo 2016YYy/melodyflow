@@ -230,6 +230,58 @@ gradle.projectsEvaluated {
 """
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# [patch_legacy_tag] audio_service 常量断言
+#
+# v1.7.0 的 lib/services/audio_handler.dart 写的是：
+#     androidNotificationOngoing: true,
+#     androidStopForegroundOnPause: false,
+# audio_service 0.18.19 的 AudioServiceConfig const 构造函数里有断言：
+#     !androidNotificationOngoing || androidStopForegroundOnPause
+# 这两个值一起出现时断言在 const 求值期就炸：
+#     lib/services/audio_handler.dart:121:19: Error: Constant evaluation error:
+#     Context: This assertion failed with message:
+#       The androidNotificationOngoing will make no effect with
+#       androidStopForegroundOnPause set to false
+#     Target kernel_snapshot_program failed: Exception
+# 属于源码级 bug，不是构建环境问题，只能改源码。
+MARKER_AUDIO = "[patch_legacy_tag] audio_service 断言"
+
+_RE_ONGOING = re.compile(r"androidNotificationOngoing\s*:\s*true\b")
+_RE_STOPFG = re.compile(r"androidStopForegroundOnPause\s*:\s*false\b")
+
+
+def patch_audio_handler():
+    """把 audio_service 的冲突常量改成自洽组合（幂等）。"""
+    path = ROOT / "lib" / "services" / "audio_handler.dart"
+    if not path.exists():
+        report("   lib/services/audio_handler.dart 不存在，跳过")
+        return False
+    text = path.read_text(encoding="utf-8")
+    if MARKER_AUDIO in text or ("androidNotificationOngoing: false" in text
+                               and "androidStopForegroundOnPause: true" in text):
+        report("   audio_service 断言配置已自洽，跳过")
+        return False
+    new = _RE_ONGOING.sub("androidNotificationOngoing: false", text)
+    new = _RE_STOPFG.sub("androidStopForegroundOnPause: true", new)
+    if new == text:
+        report("   audio_service 断言配置未匹配到旧写法，跳过")
+        return False
+    new = new.replace(
+        "      androidNotificationChannelDescription: '音乐播放控制',",
+        "      androidNotificationChannelDescription: '音乐播放控制',\n"
+        "      // " + MARKER_AUDIO + ": audio_service 0.18.19 断言\n"
+        "      //   !androidNotificationOngoing || androidStopForegroundOnPause\n"
+        "      // 原来 ongoing:true + stopForegroundOnPause:false 在 const 求值期失败：\n"
+        "      //   The androidNotificationOngoing will make no effect with\n"
+        "      //   androidStopForegroundOnPause set to false",
+        1,
+    )
+    path.write_text(new, encoding="utf-8")
+    report("   + 修正 audio_service 断言冲突（ongoing:true/stopForeground:false -> false/true）")
+    return True
+
+
 def report(msg):
     print(msg, flush=True)
 
@@ -533,6 +585,7 @@ def main():
     changed |= patch_build_kts(args.check)
     changed |= patch_app_build_kts(args.check)
     changed |= patch_gradle_props(args.check)
+    changed |= patch_audio_handler()
 
     if args.check:
         report("== check 完成，changed=%s" % changed)

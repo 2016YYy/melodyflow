@@ -19,12 +19,16 @@ melodyflow 的 v1.7.0 / v1.7.1 在打包时只有 tag、没有 Release，因为�
      没有 package 属性（或 AGP 8 不再回退读它），AGP 8 要求显式 namespace。
   3) JVM target -- 老插件没有 compileOptions/kotlinOptions，
      JavaCompile 默认 1.8、KotlinCompile 跟随 JDK 17，KGP 一致性校验中断构建。
+  5) Gradle 版本 -- v1.7.0 的 wrapper 指向 gradle-9.8.1，而 Gradle 9.6.0 起
+     移除了 AGP 8.x 依赖的 org.gradle.api.problems.internal.InternalProblems，
+     报 "relies on ... a Gradle internal API that was removed in Gradle 9.6.0"。
+     统一到 8.14.3（main / v1.7.1 用的就是它）。
   4) 本机代理 -- v1.7.0 / v1.7.1 的 android/gradle.properties 把
      -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18080 写死在
      org.gradle.jvmargs 里。runner 上没有这个代理，所有仓库请求连不上，
      Gradle 把「网络不可达」报成「插件版本不存在」，极难辨认。
 
-本脚本做 0)、2)、3) 和 4)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
+本脚本做 0)、2)、3)、4) 和 5)，且是幂等的：检测到已经修过就跳过，绝不覆盖既有内容。
 3) 采用与主线 commit aed5b77 完全相同的落点（root 侧把 JavaCompile 拉到 17 +
 gradle.properties 里把一致性校验降级为 warning），保证新旧版本产物行为一致。
 
@@ -50,12 +54,14 @@ GRADLE_PROPS = ANDROID / "gradle.properties"
 
 def set_root(root):
     """把全局路径重定向到指定项目根目录。"""
-    global ROOT, ANDROID, BUILD_KTS, GRADLE_PROPS, SETTINGS_KTS
+    global ROOT, ANDROID, BUILD_KTS, GRADLE_PROPS, SETTINGS_KTS, WRAPPER_PROPS
     ROOT = pathlib.Path(root).resolve()
     ANDROID = ROOT / "android"
     BUILD_KTS = ANDROID / "build.gradle.kts"
     GRADLE_PROPS = ANDROID / "gradle.properties"
     SETTINGS_KTS = ANDROID / "settings.gradle.kts"
+    WRAPPER_PROPS = ANDROID / "gradle" / "wrapper" / "gradle-wrapper.properties"
+WRAPPER_PROPS = ANDROID / "gradle" / "wrapper" / "gradle-wrapper.properties"
 SETTINGS_KTS = ANDROID / "settings.gradle.kts"
 
 MARKER_NAMESPACE = "[patch_legacy_tag] 老插件 namespace"
@@ -245,6 +251,51 @@ def patch_gradle_proxy(dry_run):
     return True
 
 
+# Gradle 9.6.0 移除了 org.gradle.api.problems.internal.InternalProblems，
+# AGP 8.x 依赖它，因此在 Gradle 9.6+ 上直接报：
+#   Plugin 'com.android.internal.application' relies on
+#   'org.gradle.api.problems.internal.InternalProblems', a Gradle internal API
+#   that was removed in Gradle 9.6.0. Update the plugin ... or use Gradle 9.5.
+# v1.7.0 的 wrapper 指向 gradle-9.8.1-all.zip，正好踩中。
+# 统一到 main 上已验证可用的 8.14.3（v1.7.1 也是这个版本，能跑通）。
+TARGET_GRADLE = "8.14.3"
+TARGET_GRADLE_URL = (
+    "https\\://services.gradle.org/distributions/gradle-" + TARGET_GRADLE + "-all.zip"
+)
+
+_RE_DIST_URL = re.compile(r"^\s*distributionUrl\s*=.*$", re.MULTILINE)
+
+
+def patch_gradle_wrapper(dry_run):
+    """把 Gradle wrapper 版本对齐到与 AGP 8.x 兼容的 8.14.3。"""
+    if not WRAPPER_PROPS.exists():
+        report("!! 找不到 android/gradle/wrapper/gradle-wrapper.properties，跳过")
+        return False
+
+    src = WRAPPER_PROPS.read_text(encoding="utf-8")
+    m = _RE_DIST_URL.search(src)
+    if not m:
+        report("!! wrapper 里没有 distributionUrl，跳过")
+        return False
+
+    current = m.group(0)
+    if "gradle-" + TARGET_GRADLE + "-all.zip" in current:
+        report("   Gradle wrapper 已是 %s，跳过" % TARGET_GRADLE)
+        return False
+
+    new_line = "distributionUrl=" + TARGET_GRADLE_URL
+    new_src = _RE_DIST_URL.sub(new_line, src, count=1)
+    ver = current.split("gradle-")[-1].split("-all")[0] if "gradle-" in current else "?"
+    report("   + Gradle wrapper %s -> %s" % (ver, TARGET_GRADLE))
+
+    if dry_run:
+        return True
+
+    WRAPPER_PROPS.write_text(new_src, encoding="utf-8")
+    report("   android/gradle/wrapper/gradle-wrapper.properties 已更新")
+    return True
+
+
 def patch_build_kts(dry_run):
     if not BUILD_KTS.exists():
         report("!! 找不到 android/build.gradle.kts，跳过")
@@ -337,6 +388,7 @@ def main():
 
     changed = False
     changed |= patch_settings_kts(args.check)
+    changed |= patch_gradle_wrapper(args.check)
     changed |= patch_gradle_proxy(args.check)
     changed |= patch_build_kts(args.check)
     changed |= patch_gradle_props(args.check)

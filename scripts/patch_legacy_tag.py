@@ -22,16 +22,28 @@ gradle.properties 里把一致性校验降级为 warning），保证新旧版本
 ----
     python3 scripts/patch_legacy_tag.py            # 就地修补 android/
     python3 scripts/patch_legacy_tag.py --check    # 只报告，不写文件
+    python3 <tmp>/patch_legacy_tag.py --root .     # 脚本不在项目内时指定根目录
 """
 
 import argparse
 import pathlib
 import sys
 
+# 默认以脚本自身位置推断项目根（脚本位于 <root>/scripts/ 下）。
+# CI 里脚本可能被单独取到临时目录执行，那种情况用 --root 显式指定，见 main()。
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ANDROID = ROOT / "android"
 BUILD_KTS = ANDROID / "build.gradle.kts"
 GRADLE_PROPS = ANDROID / "gradle.properties"
+
+
+def set_root(root):
+    """把全局路径重定向到指定项目根目录。"""
+    global ROOT, ANDROID, BUILD_KTS, GRADLE_PROPS
+    ROOT = pathlib.Path(root).resolve()
+    ANDROID = ROOT / "android"
+    BUILD_KTS = ANDROID / "build.gradle.kts"
+    GRADLE_PROPS = ANDROID / "gradle.properties"
 
 MARKER_NAMESPACE = "[patch_legacy_tag] 老插件 namespace"
 MARKER_JVM = "[patch_legacy_tag] 老插件 JVM target"
@@ -195,7 +207,16 @@ def patch_gradle_props(dry_run):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只检查不写文件")
+    ap.add_argument(
+        "--root",
+        default=None,
+        help="Flutter 项目根目录（含 android/）。默认按脚本所在位置推断；"
+        "CI 中脚本被单独取到临时目录执行时必须显式传入。",
+    )
     args = ap.parse_args()
+
+    if args.root:
+        set_root(args.root)
 
     report("== patch_legacy_tag: 目标目录 %s" % ANDROID)
     if not ANDROID.is_dir():

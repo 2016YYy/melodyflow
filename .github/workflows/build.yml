@@ -66,7 +66,8 @@ jobs:
           git fetch --depth=1 origin "+refs/heads/main:refs/remotes/origin/main"
           git show origin/main:scripts/patch_legacy_tag.py > "$SCRIPT_DIR/patch_legacy_tag.py"
           echo "补丁脚本 $(wc -c < "$SCRIPT_DIR/patch_legacy_tag.py") bytes"
-          python3 "$SCRIPT_DIR/patch_legacy_tag.py"
+          # 脚本在临时目录，不能靠自身位置推断项目根，显式指定 --root
+          python3 "$SCRIPT_DIR/patch_legacy_tag.py" --root "$GITHUB_WORKSPACE"
           echo "=== 补丁后 diff ==="
           git --no-pager diff --stat || true
 

@@ -1,3 +1,42 @@
+## [1.7.2] - 2026-10-30
+
+### 🐛 修复 CI 构建与发布（Android 正式打通）
+
+这一版把 GitHub Actions 的 Android 构建从"从未成功过"推到**产出正式签名 APK 并自动发布 Release**。
+
+- **NDK 版本取错，导致 runner 装错 NDK**：`Install Android NDK` 步骤此前 `grep ... | head -1` 扫整个
+  `flutter_tools/gradle/src`，命中了 `FlutterPluginUtils.kt` 里的历史兜底常量 `21.1.6352462`。
+  现改为只在 `src/main/kotlin/FlutterPluginUtils.kt` 取最大版本号，与 Flutter 实际生效值一致。
+- **AGP / Kotlin 与 Flutter 3.44.9 不配套（NDK 问题的真正根因）**：`settings.gradle.kts` 原为
+  AGP 8.9.1 + Kotlin 2.1.20，而 Flutter 3.44.9 的 `flutter_tools/gradle` 依赖 AGP 8.11.1 + Kotlin 2.2.20。
+  AGP 8.9 自带默认 NDK `27.0.12077973`，于是无论 SDK 里装了什么版本都报
+  `NDK not configured. Preferred NDK version is '27.0.12077973'`。升到 **8.11.1 / 2.2.20** 后该错误消失。
+- **`local.properties` 被写成残缺的 `ndk.dir`**：安装步骤引用了上一步的局部变量，导致：
+  `[CXX1101] NDK at .../sdk/ndk did not have a source.properties file`。
+  现只写 `sdk.dir` 与 `flutter.sdk`，让 AGP 自己扫已注册的 NDK 版本。
+- **`on_audio_query_android` 缺 namespace（AGP 8 起必填）**：该包 1.1.0 是 2022 年停更的版本，
+  `android/build.gradle` 里只有 `group`，没有 `android { namespace }`。pub-cache 只读、每次
+  `pub get` 会重建，只能在 root 侧补。实测 **`afterEvaluate` 太晚**（AGP 在
+  `CrashReporting$afterEvaluate` 里就创建 `VariantBuilder`，并打印 `ns=null`），
+  必须落在 `plugins.withId("com.android.library")` 回调内 —— 它早于 AGP 注册的 afterEvaluate。
+- **老包 JVM Target 不一致**：`compileReleaseKotlin` 报
+  `Inconsistent JVM-target compatibility ... 'compileReleaseJavaWithJavac' (1.8) and 'compileReleaseKotlin' (17)`。
+  反射 `compilerOptions` 与任务级 `doFirst` 均无效（校验发生在 eager 阶段），最终在 root 把该子项目的
+  `JavaCompile` 拉到 17，并用 `kotlin.jvm.target.validation.mode=warning` 兜底。
+- **`AudioServiceConfig` 断言冲突**：`androidNotificationOngoing=true` 必须搭配
+  `androidStopForegroundOnPause=true`，原写法触发 const 求值断言失败，`kernel_snapshot_program` 直接中断。
+- **Release 资产缺失导致发布失败**：`action-gh-release` 的 `files` 仍列着早已 `if: false` 的
+  `windows-zip/*` 与 `ios-ipa/*`，上传时找不到文件即失败。现只收 `android-apk/*`。
+- **Release 只在 tag 触发**：手动 `workflow_dispatch` 仅验证构建，不会误发半成品。
+
+### 📄 文档与发布模板对齐真实产物
+
+- **`.github/release_template.md` 重写**：不再列出从未产出过的 Windows `.zip` / iOS `.ipa`，
+  下载表只留 Android APK 与 `.sha256`，并补上 `### 🔒 完整性校验` 与 v1.5.0 签名断裂的升级提示。
+- **README 修正平台声明**：删除「支持 Android / iOS / Windows 三端」的表述与对应徽章，
+  改为明确「当前官方发布 Android 版本」，源码构建命令里 iOS / Windows 两行标注为未启用。
+
+---
 # 更新日志
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。

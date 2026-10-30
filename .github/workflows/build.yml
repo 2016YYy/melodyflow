@@ -165,7 +165,7 @@ jobs:
       # 无论 plugins.withId 还是 gradle.projectsEvaluated，日志里一行 [compileSdk-fix] 都没有，
       # 说明这个老包的 compileSdk 在更早的 DSL 求值阶段就被固化了。
       # 与其继续反射，不如直接把 android-33 平台装进 SDK：确定性最强，也不碰插件源码。
-      - name: Ensure legacy SDK platforms
+      - name: Ensure legacy SDK platforms and CMake
         run: |
           set +e
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
@@ -182,6 +182,7 @@ jobs:
           echo "=== 现有 platforms ==="
           ls -1 "$SDK_ROOT/platforms" 2>/dev/null || true
           for P in 33; do
+            # P=33: on_audio_query_android 写死 compileSdkVersion 33
             if [ -f "$SDK_ROOT/platforms/android-$P/source.properties" ] || [ -f "$SDK_ROOT/platforms/android-$P/android.jar" ]; then
               echo "platform android-$P 已存在，跳过"
             else
@@ -197,6 +198,26 @@ jobs:
           done
           echo "=== 最终 platforms ==="
           ls -1 "$SDK_ROOT/platforms" 2>/dev/null || true
+          # ── CMake ────────────────────────────────────────────────────────────
+          # android-33 就位后新暴露：:app:configureCMakeRelease[arm64-v8a] 报
+          #   [CXX1300] CMake '3.22.1' was not found in SDK, PATH, or by cmake.dir property.
+          # AGP 默认要 CMake 3.22.1，GitHub 镜像没预装。同样用 sdkmanager 装。
+          for C in 3.22.1; do
+            if [ -x "$SDK_ROOT/cmake/$C/bin/cmake" ]; then
+              echo "cmake $C 已存在，跳过"
+            else
+              echo "=== 安装 cmake;$C ==="
+              yes 2>/dev/null | "$SDKMGR" --sdk_root="$SDK_ROOT" --install "cmake;$C" > "/tmp/sdk-cmake-$C.log" 2>&1 || true
+              tail -5 "/tmp/sdk-cmake-$C.log" || true
+            fi
+            if [ -x "$SDK_ROOT/cmake/$C/bin/cmake" ]; then
+              echo "  OK   cmake $C -> $("$SDK_ROOT/cmake/$C/bin/cmake" --version | head -1)"
+            else
+              echo "  WARN cmake $C 仍缺失（构建可能失败）"
+            fi
+          done
+          echo "=== 最终 cmake ==="
+          ls -1 "$SDK_ROOT/cmake" 2>/dev/null || true
 
       - name: Install dependencies
         run: |

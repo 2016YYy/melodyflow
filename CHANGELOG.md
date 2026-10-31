@@ -1,3 +1,9 @@
+# 更新日志
+
+本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
+
+---
+
 ## [1.7.2] - 2026-10-30
 
 ### 🐛 修复 CI 构建与发布（Android 正式打通）
@@ -28,6 +34,32 @@
 - **Release 资产缺失导致发布失败**：`action-gh-release` 的 `files` 仍列着早已 `if: false` 的
   `windows-zip/*` 与 `ios-ipa/*`，上传时找不到文件即失败。现只收 `android-apk/*`。
 - **Release 只在 tag 触发**：手动 `workflow_dispatch` 仅验证构建，不会误发半成品。
+- **补建历史版本时找不到补丁脚本**：`workflow_dispatch` 填 `build_ref` 重建老版本时，checkout 出的是老 tag
+  的树，里面没有本轮才新增的 `scripts/patch_legacy_tag.py`，报
+  `python3: can't open file '.../scripts/patch_legacy_tag.py'`。现改为从 `origin/main` 取该脚本再执行，
+  并新增 `--root "$GITHUB_WORKSPACE"` 参数（脚本原先靠 `__file__` 推断项目根，复制到临时目录后推断错误）。
+- **老版本 AGP / KGP 版本在 Google Maven 上不存在**：`v1.6.0` 写的是 AGP 9.1.0 + Kotlin 2.4.0，
+  `v1.7.0` 是 9.0.1 + 2.3.20，而 9.x 从未发布过，报 `Plugin [id: 'com.android.application', version: '9.0.1'] was not found`。
+  这正是这两个版本当年没能产出 Release 的根因之一。现由补丁脚本统一下调到 **8.11.1 / 2.2.20**。
+- **老版本 gradle.properties 写死了本机代理**：`v1.7.0` / `v1.7.1` 的 `org.gradle.jvmargs` 带着
+  `-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=18080` 等参数，runner 上该代理不存在，Maven 全部连不上，
+  Gradle 却报成"插件版本不存在"——极难辨认。现由补丁脚本只针对 `org.gradle.jvmargs` 这一行剥离代理参数
+  （不能全局替换，注释里的示例文本会被误伤）。
+- **老版本 Gradle wrapper 版本与 AGP 不兼容**：`v1.7.0` 用 gradle 9.8.1，AGP 依赖的
+  `org.gradle.api.problems.internal.InternalProblems` 在 Gradle 9.6.0 已被移除，报
+  `... a Gradle internal API that was removed in Gradle 9.6.0 ... or use Gradle 9.5`。现统一到 **8.14.3**。
+- **老版本 `app/build.gradle.kts` 里 `java.util.Properties()` 解析失败**：kts 脚本中 `java` 会被当作
+  Gradle 的 JavaPluginExtension 扩展而非包名，报 `Unresolved reference: util`。现补 `import java.util.Properties`
+  并改用短名（仅改代码行，不碰注释里的旧写法）。
+- **`on_audio_query_android` 写死 `compileSdkVersion 33`**：runner 只预装 Flutter 需要的平台（36），
+  报 `Failed to find target with hash string 'android-33'`。root 侧反射兜底（`plugins.withId` 与
+  `gradle.projectsEvaluated` 两条路径）实测都赶不上——该值在更早的 DSL 求值阶段就固化了。
+  最终改为在 CI 里直接 `sdkmanager --install platforms;android-33`，确定性最强。
+- **缺少 CMake 3.22.1**：android-33 就位后新暴露 `[CXX1300] CMake '3.22.1' was not found`，
+  同为 GitHub 镜像未预装，一并由 `sdkmanager --install cmake;3.22.1` 补上。
+- **补建 Release 的正文版本号张冠李戴**：`release_template.md` 跟随 tag 提交，旧 tag 里写的是当年版本号，
+  `body_path` 直接引用会让 `v1.7.0` 的正文标题与下载表都写成 `v1.7.1`。现新增
+  `Render release body` 步骤，用 `sed` 把模板里的版本号统一替换为本次发布目标版本。
 
 ### 📄 文档与发布模板对齐真实产物
 
@@ -37,35 +69,10 @@
   改为明确「当前官方发布 Android 版本」，源码构建命令里 iOS / Windows 两行标注为未启用。
 
 ---
-# 更新日志
 
-本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
+本](https://semver.org/lang/zh-CN/) 规范。
 
 版本格式：`主版本号.次版本号.修订号`
-
----
-
-## [1.7.2] - 2026-10-29
-
-### 🐛 修复 CI 构建与发布
-
-- **修复 `:jni` 报 NDK not configured**：root `android/build.gradle.kts` 的 NDK 统一覆盖此前写在 `subprojects {}` 里，
-  执行时机早于子项目自身脚本，`jni` 插件随后把 `ndkVersion` 改回自己的版本，导致配置 `:jni` 阶段直接失败。
-  改为 `subprojects { afterEvaluate { ... } }` 后覆盖才真正生效，并输出 `[ndk-override]` 日志便于核对。
-- **修复 NDK 版本探测取错值**：`Install Android NDK` 步骤此前用 `grep ... | head -1` 扫整个 `flutter_tools/gradle/src`，
-  命中了 `FlutterPluginUtils.kt` 里的历史兜底常量 `21.1.6352462`，于是 runner 装了错误的 NDK。
-  现改为只在 `src/main/kotlin/FlutterPluginUtils.kt` 里取最大版本号，与 Flutter 实际生效值一致。
-- **修复 Release 资产缺失导致发布失败**：`action-gh-release` 的 `files` 仍列着 `windows-zip/*` 与 `ios-ipa/*`，
-  而这两个 job 早已 `if: false`，上传时找不到文件即失败。现只收 `android-apk/*`。
-
-### 📄 文档与发布模板对齐真实产物
-
-- **`.github/release_template.md` 重写**：不再列出从未产出过的 Windows `.zip` / iOS `.ipa`，
-  下载表只留 Android APK 与 `.sha256`，并补上 `### 🔒 完整性校验` 与 v1.5.0 签名断裂的升级提示。
-- **README 修正平台声明**：删除「支持 Android / iOS / Windows 三端」的表述与对应徽章，
-  改为明确「当前官方发布 Android 版本」，源码构建命令里 iOS / Windows 两行标注为未启用。
-
----
 
 ## [1.7.1] - 2026-10-22
 
